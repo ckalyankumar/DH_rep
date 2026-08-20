@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "495637881278",
+    "project_id": "dhealth-fb17e",
+    "storage_bucket": "dhealth-fb17e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:495637881278:android:a1d22a638b7e9427d119ef",
+        "android_client_info": {
+          "package_name": "com.example.dhealth"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "495637881278-6a1c6rvih06jkqmlmlnrep71u8ih2ogg.apps.googleusercontent.com",
+          "client_type": 1
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC1-Si6QAJjz0u-847OplR9UGHESJjwlpg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "dhealth-seed-scripts",
+  "version": "1.0.0",
+  "description": "Local demo data seeding for DHealth Firestore emulator",
+  "type": "module",
+  "scripts": {
+    "seed": "node seed-demo-users.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}

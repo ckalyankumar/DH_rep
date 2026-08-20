@@ -1,0 +1,81 @@
+---
+description: Core DHealth project rules, architecture, and clinical safety constraints
+alwaysApply: true
+---
+
+# DHealth Codebase Rules
+
+You are an AI assistant working inside the DHealth codebase.
+
+## High-level product context
+
+- DHealth is a Flutter app that helps people with chronic dermatologic conditions (initially psoriasis and eczema/atopic dermatitis) track symptoms, understand triggers, and share guideline-aligned reports with their dermatologists.
+- The app combines: daily symptom logs, environmental data (weather, AQI), clinical evidence from global and Indian guidelines, and standards-based reporting (ABDM, FHIR R4).
+- Primary markets: India-first but globally relevant; clinical content must be consistent with major guidelines (IADVL, AAD, NPF, European guidelines) and reputable peer-reviewed literature.
+
+## Core architectural concepts
+
+- **DailyLogService** (offline-first in-memory logs) + **FirestoreDailyLogService** (30-day cloud sync).
+- **InsightEngine** for correlations (Pearson, lag) and trigger detection.
+- **RecommendationService** built on a **DisorderRegistry** for psoriasis and eczema, including India-specific pollution advice.
+- **RiskCalculationService** / **LogAnalytics** for a 0–100 risk score with explainable components.
+- **FHIRBundleGenerator** and **ReportGeneratorService** for ABDM/FHIR-compliant reports and PDFs.
+
+## General coding guidelines
+
+- Follow the existing architectural patterns and naming conventions in the codebase.
+- Prefer small, composable services and widgets over monolithic classes.
+- Keep business logic out of UI widgets when possible; use services / controllers.
+- Write code that is easy to test; where practical, add or update tests alongside new logic.
+- When editing existing files, preserve behaviour unless explicitly asked to change it.
+
+## Clinical and safety constraints
+
+- Do NOT create or modify clinical advice, triggers, or treatments based on your own medical reasoning.
+- Do NOT invent new medical claims or treatments; only encode or wire up content that is clearly provided (e.g., in clinical data files, evidence models, or specification text).
+- Only use clinical constants, triggers, guideline references, and evidence records that already exist in the project or are explicitly provided in the prompt/spec.
+- Do NOT change clinical constants (triggers, evidence grades, guideline references) unless explicitly instructed in the prompt.
+- Avoid suggesting off-label treatments or making diagnostic statements.
+- When implementing red-flag logic or urgent-care banners, make them configurable constants or data-driven rather than hard-coding speculative rules.
+- Never imply that the app replaces a dermatologist; where relevant, surface language like: *"This app does not diagnose or prescribe. It is for tracking and education only."*
+
+## Evidence and knowledge-base behaviour
+
+- The app already has a structured clinical knowledge base (e.g., DisorderRegistry, ClinicalEvidence, EvidencedTrigger).
+- When extending or adding conditions, use the same patterns: ICD codes, structured triggers with references, and GRADE-style evidence tags.
+- Keep the boundary clear: UI surfaces evidence; clinical logic and constants live in dedicated data/clinical modules.
+- When wiring UI to evidence, always show the source (DOI, PMID, guideline body) if available in the data model.
+
+## Data and analytics behaviour
+
+- **Daily logs**: users can log multiple times per day. Aggregation for analytics and risk scoring uses a per-day aggregate that includes the highest itch score (`max_itch`) and additional summary statistics (e.g., averages for mood, stress, sleep disruption).
+- **Risk score**: design as an explainable composite of components (itch, lesion severity/extent, stress, sleep disruption, mood, environmental factors, and triggers) with clear weights and overrides for guideline-defined red flags.
+- Do not introduce opaque ML-based risk scores unless explicitly requested; keep formulas transparent and document them in comments.
+
+## Doctor-facing features
+
+- Doctors have a separate, minimal portal/view: they can log in, see a list of linked patients, and open/download reports (PDF, FHIR/ABDM bundle, CSV for recommendations).
+- Doctor view is read-only on patient logs in the current scope; if adding comments or notes, store them in a clearly separated structure and do not mutate patient-entered data.
+- **Clinical messaging**: Doctors can message patients via a clinically-scoped thread (`clinicalMessages` subcollection). When doctors view patient data or download reports, `doctorSession` records the view; patients see "Doctor last reviewed your data on [date]" to close the feedback loop.
+
+## Patient-facing features
+
+- Patients should always stay in control of their data sharing: implement explicit consent and revocation for doctor access, data export, and wearable connections.
+- Self-care recommendations can be turned into routines; selected routines drive reminders and optionally calendar events.
+- Non-adherence nudges must be gentle and contextual, never shaming.
+
+## Style of interaction
+
+- When asked to implement or change something, first briefly restate the intent, then apply minimal, focused edits that respect existing architecture.
+- When you are unsure about clinical details, prefer to:
+  - Implement the technical structure (data models, wiring, UI hooks), and
+  - Leave TODO comments clearly marked for a human clinician or product owner to fill in content.
+- When asked for "more treatments" or "new recommendations" without provided content, respond in comments/TODOs instead of inventing details.
+- If you need to add placeholders, use clearly marked TODOs like: `// TODO(clinical-review): Populate evidence-based recommendations for [X].`
+- When the user provides explicit specs in comments, treat them as the source of truth over any inferred assumptions.
+
+## Output format
+
+- For code edits, prefer patch-style (minimal diffs) over full rewrites, unless explicitly asked for a refactor.
+- Keep imports clean and avoid unused dependencies.
+- Add concise comments only where they significantly improve understanding of non-obvious logic.

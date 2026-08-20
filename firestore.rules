@@ -1,0 +1,141 @@
+// DHealth Firestore Security Rules
+// Last updated: 2026-03-13
+// Pilot version — reviewed before scaling beyond 50 patients
+// Sprint update: added medicationProfile, weeklyFocus,
+//   proAlertDismissals; fixed doctor read on user document;
+//   removed dead routineCompletions rule; tightened
+//   _health_check and sharedWithDoctors status validation.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── HELPER FUNCTIONS ────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    // Sanitize email for doc path (must match Dart DoctorPatientLinkService)
+    function sanitizedDoctorEmail() {
+      return request.auth.token.email.split('\\.').join('_').split('@').join('_at_');
+    }
+
+    // Doctor can read patient data if an active sharedWithDoctors link exists
+    // App uses users/{patientId}/sharedWithDoctors/{sanitizedDoctorEmail}, not top-level doctorPatientLinks
+    function isDoctorLinkedToPatient(patientUid) {
+      return exists(/databases/$(database)/documents/users/$(patientUid)/sharedWithDoctors/$(sanitizedDoctorEmail()))
+        && get(/databases/$(database)/documents/users/$(patientUid)/sharedWithDoctors/$(sanitizedDoctorEmail())).data.status == 'active';
+    }
+
+    // ── HEALTH CHECK (connectivity probe) ────────────────────────────
+    match /_health_check/{doc} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // ── USER PROFILE ────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    // ── PATIENT DATA (subcollections) ───────────────────────────────
+    // Patient: full read/write. Linked doctor: read-only.
+    // Note: doctors can never write patient data; writes are restricted to owners only.
+    match /users/{uid}/dailyLogs/{logId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/weeklyPulses/{pulseId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/proAssessments/{assessmentId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    // Medication profile — patient write, doctor read
+    match /users/{uid}/medicationProfile/{docId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    // Weekly focus — patient only
+    match /users/{uid}/weeklyFocus/{docId} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    // PRO alert dismissals — patient only
+    match /users/{uid}/proAlertDismissals/{docId} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/reports/{reportId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    // Wearable data — patient only (doctors see derived summaries in PDF, not raw)
+    match /users/{uid}/wearableSources/{sourceId} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/dailyWearableAggregates/{date} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/syncAuditLog/{recordId} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/redFlagAcknowledgements/{docId} {
+      allow read, write: if isSignedIn() && isOwner(uid);
+    }
+
+    match /users/{uid}/flareEpisodes/{episodeId} {
+      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      allow write: if isSignedIn() && isOwner(uid);
+    }
+
+    // ── DOCTOR–PATIENT LINKS (sharedWithDoctors) ────────────────────
+    // Doc ID: sanitized doctor email (e.g. doc_at_example_com)
+    // Patient creates/updates/deletes; doctor reads own doc for verification
+    match /users/{uid}/sharedWithDoctors/{docId} {
+      allow create: if isSignedIn() && isOwner(uid)
+        && request.resource.data.status in ['active', 'revoked', 'pending'];
+      allow update: if isSignedIn() && isOwner(uid)
+        && request.resource.data.status in ['active', 'revoked', 'pending'];
+      allow read:   if isSignedIn() && (isOwner(uid) || docId == sanitizedDoctorEmail());
+      allow delete: if isSignedIn() && isOwner(uid);
+
+      // Doctor records view timestamp when they have active access
+      match /doctorSession/{sessionId} {
+        allow read: if isSignedIn() && (isOwner(uid) || docId == sanitizedDoctorEmail());
+        allow create, update: if isSignedIn()
+          && docId == sanitizedDoctorEmail()
+          && get(/databases/$(database)/documents/users/$(uid)/sharedWithDoctors/$(docId)).data.status == 'active';
+        allow delete: if false;
+      }
+
+      // Clinical messaging: patient and doctor read/write when link is active
+      match /clinicalMessages/{messageId} {
+        allow read, create: if isSignedIn()
+          && (isOwner(uid) || docId == sanitizedDoctorEmail())
+          && get(/databases/$(database)/documents/users/$(uid)/sharedWithDoctors/$(docId)).data.status == 'active';
+        allow update, delete: if false;
+      }
+    }
+
+    // ── DENY ALL ELSE ───────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

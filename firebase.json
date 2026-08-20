@@ -1,0 +1,8 @@
+{
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    }
+  },
+  "flutter":{"platforms":{"android":{"default":{"projectId":"dhealth-fb17e","appId":"1:495637881278:android:a1d22a638b7e9427d119ef","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"dhealth-fb17e","configurations":{"android":"1:495637881278:android:a1d22a638b7e9427d119ef","ios":"1:495637881278:ios:8a726ec5e8514c2bd119ef","macos":"1:495637881278:ios:8a726ec5e8514c2bd119ef","web":"1:495637881278:web:5e61f852c2ae47c4d119ef","windows":"1:495637881278:web:4302cca54a10458fd119ef"}}}}}
+}
