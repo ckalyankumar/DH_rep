@@ -4,8 +4,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'package:dhealth/services/firestore_user_profile_service.dart';
-import 'package:dhealth/debug_agent_log.dart';
-
 /// Web client ID from Google Cloud Console (Firebase Auth > Sign-in method > Google).
 /// Required for Google Sign-In on Android; add it if sign-in fails.
 const String _kGoogleWebClientId = '495637881278-6a1c6rvih06jkqmlmlnrep71u8ih2ogg.apps.googleusercontent.com';
@@ -52,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final selected = _role.trim().toLowerCase();
     if (selected == 'doctor') {
       await FirestoreUserProfileService.saveRole(user.uid, 'doctor');
+      await _confirmRoleWritten(user.uid, 'doctor');
       return;
     }
 
@@ -60,6 +59,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (existingRole != 'doctor') {
       await FirestoreUserProfileService.saveRole(user.uid, 'patient');
     }
+  }
+
+  /// Re-reads role directly from Firestore (bypassing any cache) and retries
+  /// the write once if it hasn't landed yet. Prevents AuthGate's live stream
+  /// from ever observing a stale/absent role and routing a doctor into
+  /// onboarding or the patient MainScreen before the write completes.
+  Future<void> _confirmRoleWritten(
+    String uid,
+    String expectedRole, {
+    int attempt = 0,
+  }) async {
+    final current = await FirestoreUserProfileService.getRole(uid);
+    if (current == expectedRole) return;
+    if (attempt >= 3) return; // give up silently; UI can still recover manually
+    await FirestoreUserProfileService.saveRole(uid, expectedRole);
+    await Future.delayed(const Duration(milliseconds: 200));
+    await _confirmRoleWritten(uid, expectedRole, attempt: attempt + 1);
   }
 
   String _getErrorMessage(dynamic e) {
@@ -117,18 +133,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
 
-      // #region agent log
-      agentDebugLog(
-        location: 'login_screen.dart:_loginWithEmail',
-        message: 'email auth success before pop',
-        hypothesisId: 'H1',
-        data: {
-          'uiRole': _role,
-          'isSignUp': _isSignUp,
-        },
-      );
-      // #endregion
-
       await _persistRoleForCurrentUser();
 
       if (!mounted) return;
@@ -181,15 +185,6 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: idToken,
       );
       await FirebaseAuth.instance.signInWithCredential(credential);
-      // #region agent log
-      agentDebugLog(
-        location: 'login_screen.dart:_loginWithGoogle',
-        message: 'google auth success before pop',
-        hypothesisId: 'H1',
-        data: {'uiRole': _role},
-      );
-      // #endregion
-
       await _persistRoleForCurrentUser();
 
       if (!mounted) return;

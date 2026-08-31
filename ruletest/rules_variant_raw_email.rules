@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Diagnostic: dump whether email is present by comparing against the raw unsanitized email
+    match /doctorLinks/{sanitizedEmail}/patients/{patientId} {
+      allow read: if isSignedIn()
+        && request.auth.token.email == 'kalyan136@rediffmail.com';
+    }
+  }
+}

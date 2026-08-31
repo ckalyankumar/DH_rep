@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:dhealth/config/risk_score_config.dart';
 import 'package:dhealth/models/clinical_evidence_models.dart';
 import 'package:dhealth/models/daily_log.dart';
@@ -67,29 +64,6 @@ class RiskScoreCalculator {
     PersonalWeightProfile? personalProfile,
     WearableRiskModifier? wearableRiskModifier,
   }) {
-    // #region agent log
-    try {
-      final logFile = File('debug-4d8c79.log');
-      final logEntry = <String, dynamic>{
-        'sessionId': '4d8c79',
-        'runId': 'pre-fix',
-        'hypothesisId': 'RISK-A',
-        'location': 'risk_score_calculator.dart:calculate',
-        'message': 'calculate_enter',
-        'data': {
-          'logCount': logs.length,
-          'condition': condition,
-        },
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      logFile.writeAsStringSync(
-        '${jsonEncode(logEntry)}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-    } catch (_) {}
-    // #endregion
-
     final disorderWeights = _getWeights(condition);
     final weights = personalProfile != null
         ? personalProfile.mergeInto(disorderWeights)
@@ -141,30 +115,6 @@ class RiskScoreCalculator {
         explanation.add('Recent worsening trend adds +${trendMod.toStringAsFixed(0)}');
       }
 
-      // #region agent log
-      try {
-        final logFile = File('debug-4d8c79.log');
-        final logEntry = <String, dynamic>{
-          'sessionId': '4d8c79',
-          'runId': 'pre-fix',
-          'hypothesisId': 'RISK-B',
-          'location': 'risk_score_calculator.dart:calculate',
-          'message': 'trend_block_evaluated',
-          'data': {
-            'sortedLen': sorted.length,
-            'trendMod': trendMod,
-            'last3Avg': last3Avg,
-            'prior4Avg': prior4Avg,
-          },
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        };
-        logFile.writeAsStringSync(
-          '${jsonEncode(logEntry)}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
     }
 
     baseScore += trendMod;

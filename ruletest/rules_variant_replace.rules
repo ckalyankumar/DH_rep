@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // replace('[.]', '_') then replace('@', '_at_') — replace() also takes regex
+    match /doctorLinks/{sanitizedEmail}/patients/{patientId} {
+      allow read: if isSignedIn()
+        && sanitizedEmail == request.auth.token.email.replace('[.]', '_').replace('@', '_at_');
+    }
+  }
+}

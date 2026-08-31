@@ -1,7 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -20,6 +20,71 @@ import 'package:dhealth/services/insight_models.dart';
 import 'package:dhealth/services/report_generator_service_models.dart';
 
 class ReportGeneratorService {
+  static pw.ThemeData? _cachedUnicodeTheme;
+
+  /// Glyphs the report is known to emit that Helvetica cannot draw.
+  /// Checked against the bundled TTF at theme-load time so a bad/subsetted
+  /// font fails immediately instead of substituting tofu at save().
+  static const Map<int, String> _requiredReportRunes = {
+    0x2013: 'en dash',
+    0x2014: 'em dash',
+    0x2022: 'bullet',
+    0x2026: 'ellipsis',
+    0x03C1: 'greek small letter rho',
+    0x2264: 'less-than or equal',
+    0x2265: 'greater-than or equal',
+    0x2713: 'check mark',
+    0x2717: 'ballot x',
+  };
+
+  /// Load Noto Sans (SIL OFL, under assets/fonts/) and install it as the
+  /// document-wide theme so every existing TextStyle inherits Unicode coverage.
+  /// google_fonts is a Flutter TextStyle helper and cannot supply TTF bytes to
+  /// the pdf package, so the files are bundled as assets instead.
+  static Future<pw.ThemeData> _unicodeTheme() async {
+    if (_cachedUnicodeTheme != null) return _cachedUnicodeTheme!;
+
+    Future<pw.Font> load(String filename) async {
+      final data = await rootBundle.load('assets/fonts/$filename');
+      return pw.Font.ttf(data);
+    }
+
+    final regularData =
+        await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+    final mathData =
+        await rootBundle.load('assets/fonts/NotoSansMath-Regular.ttf');
+    final symbolsData =
+        await rootBundle.load('assets/fonts/NotoSansSymbols2-Regular.ttf');
+    _assertFontsCoverRequiredRunes([regularData, mathData, symbolsData]);
+
+    final theme = pw.ThemeData.withFont(
+      base: pw.Font.ttf(regularData),
+      bold: await load('NotoSans-Bold.ttf'),
+      italic: await load('NotoSans-Italic.ttf'),
+      boldItalic: await load('NotoSans-BoldItalic.ttf'),
+      fontFallback: [pw.Font.ttf(mathData), pw.Font.ttf(symbolsData)],
+    );
+    _cachedUnicodeTheme = theme;
+    return theme;
+  }
+
+  static void _assertFontsCoverRequiredRunes(List<ByteData> fonts) {
+    final cmaps = fonts.map((data) => TtfParser(data).charToGlyphIndexMap);
+    final missing = <String>[];
+    _requiredReportRunes.forEach((rune, name) {
+      final covered = cmaps.any((cmap) => (cmap[rune] ?? 0) != 0);
+      if (!covered) {
+        missing.add('$name (U+${rune.toRadixString(16)})');
+      }
+    });
+    if (missing.isNotEmpty) {
+      throw StateError(
+        'Bundled PDF fonts are missing required glyphs: ${missing.join(', ')}. '
+        'Update assets/fonts so Noto Sans plus fallbacks cover these code points.',
+      );
+    }
+  }
+
   /// Generate ABDM-compliant PDF report
   static Future<pw.Document> generateHealthReport({
     required String patientName,
@@ -40,34 +105,8 @@ class ReportGeneratorService {
     DateTime? patientDateOfBirth,
     String? patientAbhaId,
   }) async {
-    final pdf = pw.Document();
-
-    // #region agent log
-    try {
-      final logFile = File('debug-4d8c79.log');
-      final logEntry = <String, dynamic>{
-        'sessionId': '4d8c79',
-        'runId': 'pre-fix',
-        'hypothesisId': 'REP-A',
-        'location': 'report_generator_service.dart:generateHealthReport',
-        'message': 'generateHealthReport_started',
-        'data': {
-          'patientName': patientName,
-          'condition': condition,
-          'logCount': logs.length,
-          'startDate': startDate.toIso8601String(),
-          'endDate': endDate.toIso8601String(),
-        },
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      logFile.writeAsStringSync(
-        '${jsonEncode(logEntry)}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-    } catch (_) {}
-    // #endregion
-
+    final theme = await _unicodeTheme();
+    final pdf = pw.Document(theme: theme);
     // Calculate statistics
     final avgRisk = _calculateAverageRisk(logs);
     final avgMood = _calculateAverageMood(logs);
@@ -79,30 +118,6 @@ class ReportGeneratorService {
     // Derived metadata
     final generatedAt = DateTime.now();
     final reportId = _generateReportId(generatedAt);
-
-    // #region agent log
-    try {
-      final logFile = File('debug-4d8c79.log');
-      final logEntry = <String, dynamic>{
-        'sessionId': '4d8c79',
-        'runId': 'pre-fix',
-        'hypothesisId': 'REP-B',
-        'location': 'report_generator_service.dart:generateHealthReport',
-        'message': 'report_id_generated',
-        'data': {
-          'reportId': reportId,
-          'reportIdLength': reportId.length,
-        },
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      logFile.writeAsStringSync(
-        '${jsonEncode(logEntry)}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-    } catch (_) {}
-    // #endregion
-
     final appVersion = await _getAppVersion();
     final redFlags = _computeRedFlagSummary(logs);
     final gaps = _computeDataGaps(logs, startDate, endDate);
@@ -119,7 +134,11 @@ class ReportGeneratorService {
 
     pdf.addPage(
       pw.MultiPage(
+        theme: theme,
         pageFormat: PdfPageFormat.a4,
+        // Sized for a year of daily rows plus other sections. Nested widgets
+        // taller than one page still throw; this is not a workaround for that.
+        maxPages: 40,
         header: (context) {
           if (context.pageNumber == 1) {
             // No visible header content on the first page.
@@ -186,7 +205,7 @@ class ReportGeneratorService {
                 triggerProCorrelations.isNotEmpty)
               pw.SizedBox(height: 16),
             if (aggregates != null && aggregates.isNotEmpty)
-              _buildWearableInsightsSection(
+              ..._buildWearableInsightsSection(
                 aggregates,
                 wearableCorrelations ??
                     (triggerProCorrelations
@@ -199,7 +218,7 @@ class ReportGeneratorService {
               ),
             if (aggregates != null && aggregates.isNotEmpty)
               pw.SizedBox(height: 16),
-            if (logs.isNotEmpty) _buildLongitudinalSection(logs),
+            if (logs.isNotEmpty) ..._buildLongitudinalSection(logs),
             if (logs.isNotEmpty) pw.SizedBox(height: 16),
             _buildMetadataUsagePrivacySection(generatedAt),
             pw.SizedBox(height: 16),
@@ -208,30 +227,6 @@ class ReportGeneratorService {
         },
       ),
     );
-
-    // #region agent log
-    try {
-      final logFile = File('debug-4d8c79.log');
-      final logEntry = <String, dynamic>{
-        'sessionId': '4d8c79',
-        'runId': 'pre-fix',
-        'hypothesisId': 'REP-C',
-        'location': 'report_generator_service.dart:generateHealthReport',
-        'message': 'generateHealthReport_completed',
-        'data': {
-          'redFlagCount': redFlags.events.length,
-          'gapCount': gaps.significantGapCount,
-        },
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      };
-      logFile.writeAsStringSync(
-        '${jsonEncode(logEntry)}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-    } catch (_) {}
-    // #endregion
-
     return pdf;
   }
 
@@ -252,6 +247,26 @@ class ReportGeneratorService {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(6),
       child: pw.Text(text, style: const pw.TextStyle(fontSize: 9)),
+    );
+  }
+
+  static pw.Widget _compactHeader(String text) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      child: pw.Text(
+        text,
+        style: pw.TextStyle(
+          fontSize: 8,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  static pw.Widget _compactCell(String text) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      child: pw.Text(text, style: const pw.TextStyle(fontSize: 8)),
     );
   }
 
@@ -1662,7 +1677,7 @@ class ReportGeneratorService {
     );
   }
 
-  static pw.Widget _buildWearableInsightsSection(
+  static List<pw.Widget> _buildWearableInsightsSection(
     List<DailyWearableAggregate> aggregates,
     List<TriggerProCorrelation> wearableCorrelations,
     String period,
@@ -1691,9 +1706,7 @@ class ReportGeneratorService {
         stepsValues.isEmpty ? null : stepsValues.reduce((a, b) => a + b) / stepsValues.length;
     final stepsProvider = _mostCommonProvider(aggregates, hasSteps: true);
 
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
+    return [
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
@@ -1976,111 +1989,71 @@ class ReportGeneratorService {
             ),
           ),
         ),
-      ],
-    );
+    ];
   }
 
-  static pw.Widget _buildLongitudinalSection(List<DailyLog> logs) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'LONGITUDINAL HEALTH RECORD',
-          style: pw.TextStyle(
-            fontSize: 14,
-            fontWeight: pw.FontWeight.bold,
+  /// Title + spanning table as separate MultiPage children.
+  /// A nested Column of log cards is taller than one page and cannot split,
+  /// which makes the layout engine keep allocating pages until TooManyPagesException.
+  static List<pw.Widget> _buildLongitudinalSection(List<DailyLog> logs) {
+    return [
+      pw.Text(
+        'LONGITUDINAL HEALTH RECORD',
+        style: pw.TextStyle(
+          fontSize: 14,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+      pw.SizedBox(height: 8),
+      pw.Table(
+        columnWidths: {
+          0: const pw.FlexColumnWidth(1.1),
+          1: const pw.FlexColumnWidth(0.5),
+          2: const pw.FlexColumnWidth(1.4),
+          3: const pw.FlexColumnWidth(1.4),
+          4: const pw.FlexColumnWidth(2.2),
+        },
+        children: [
+          pw.TableRow(
+            repeat: true,
+            decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+            children: [
+              _compactHeader('Date'),
+              _compactHeader('Risk'),
+              _compactHeader('M/I/St/Sl'),
+              _compactHeader('Lesion / sleep'),
+              _compactHeader('Areas / notes'),
+            ],
           ),
-        ),
-        pw.SizedBox(height: 12),
-        pw.Column(
-          children: logs.map((log) {
+          ...logs.map((log) {
             final riskScore = log.calculateRiskScore();
-            return pw.Container(
-              margin: const pw.EdgeInsets.only(bottom: 8),
-              padding: const pw.EdgeInsets.all(8),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.grey300),
-                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(3)),
-                color: PdfColors.grey50,
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Text(
-                        DateFormat('MMM d • HH:mm').format(log.date),
-                        style: pw.TextStyle(
-                          fontWeight: pw.FontWeight.bold,
-                          fontSize: 9,
-                        ),
-                      ),
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: pw.BoxDecoration(
-                          color: riskScore <= 30
-                              ? PdfColors.green
-                              : riskScore <= 60
-                                  ? PdfColors.orange
-                                  : PdfColors.red,
-                          borderRadius:
-                              const pw.BorderRadius.all(pw.Radius.circular(2)),
-                        ),
-                        child: pw.Text(
-                          'R:$riskScore',
-                          style: pw.TextStyle(
-                            color: PdfColors.white,
-                            fontSize: 8,
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    'Mood:${log.mood}/5 | Itch:${log.itchIntensity}/10 | Stress:${log.stressLevel}/10 | Sleep:${log.sleepQuality}/5',
-                    style: pw.TextStyle(fontSize: 8),
-                  ),
-                  pw.SizedBox(height: 2),
-                  pw.Text(
-                    'Lesion: ${log.lesionSeverity.toUpperCase()} | Disrupted: ${log.sleepDisruption ? "Yes" : "No"}',
-                    style: pw.TextStyle(fontSize: 8),
-                  ),
-                  if (log.affectedAreas.isNotEmpty)
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.only(top: 2),
-                      child: pw.Text(
-                        'Areas: ${log.affectedAreas.join(", ")}',
-                        style: pw.TextStyle(
-                          fontSize: 7,
-                          color: PdfColors.grey700,
-                        ),
-                      ),
-                    ),
-                  if (log.notes.isNotEmpty)
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.only(top: 2),
-                      child: pw.Text(
-                        'Note: ${log.notes.substring(0, log.notes.length > 60 ? 60 : log.notes.length)}${log.notes.length > 60 ? "..." : ""}',
-                        style: pw.TextStyle(
-                          fontSize: 7,
-                          fontStyle: pw.FontStyle.italic,
-                          color: PdfColors.grey700,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+            final scores =
+                '${log.mood}/${log.itchIntensity}/${log.stressLevel}/${log.sleepQuality}';
+            final lesion =
+                '${log.lesionSeverity} · ${log.sleepDisruption ? 'disrupted' : 'ok'}';
+            final areas = log.affectedAreas.isEmpty
+                ? ''
+                : log.affectedAreas.join(', ');
+            final note = log.notes.isEmpty
+                ? ''
+                : (log.notes.length > 60
+                    ? '${log.notes.substring(0, 60)}...'
+                    : log.notes);
+            final extra =
+                [areas, note].where((s) => s.isNotEmpty).join(' · ');
+            return pw.TableRow(
+              children: [
+                _compactCell(DateFormat('dd MMM yyyy').format(log.date)),
+                _compactCell('$riskScore'),
+                _compactCell(scores),
+                _compactCell(lesion),
+                _compactCell(extra.isEmpty ? '—' : extra),
+              ],
             );
-          }).toList(),
-        ),
-      ],
-    );
+          }),
+        ],
+      ),
+    ];
   }
 
   static pw.Widget _buildMetadataUsagePrivacySection(DateTime generatedAt) {

@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+    function sanitizedDoctorEmail() {
+      return request.auth.token.email.split('.').join('_').split('@').join('_at_');
+    }
+
+    match /doctorLinks/{sanitizedEmail}/patients/{patientId} {
+      allow read: if isSignedIn() && sanitizedEmail == sanitizedDoctorEmail();
+      allow create, update: if isSignedIn() && isOwner(patientId)
+        && request.resource.data.status in ['active', 'revoked', 'pending'];
+      allow delete: if isSignedIn() && isOwner(patientId);
+    }
+  }
+}

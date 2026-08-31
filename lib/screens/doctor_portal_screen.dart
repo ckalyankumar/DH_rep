@@ -30,12 +30,17 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
+  /// Queries the `doctorLinks/{sanitizedDoctorEmail}/patients` index
+  /// directly (a normal subcollection query, not a collectionGroup). See
+  /// the full explanation in DoctorPatientLinkService.getLinksForDoctor.
   Query<Map<String, dynamic>>? get _linksQuery {
     final email = _user?.email?.trim().toLowerCase();
     if (email == null || email.isEmpty) return null;
+    final sanitized = email.replaceAll('.', '_').replaceAll('@', '_at_');
     return _db
-        .collectionGroup('sharedWithDoctors')
-        .where('doctorEmail', isEqualTo: email)
+        .collection('doctorLinks')
+        .doc(sanitized)
+        .collection('patients')
         .where('status', isEqualTo: 'active');
   }
 
@@ -204,6 +209,7 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
   Widget build(BuildContext context) {
     final user = _user;
     final email = user?.email?.trim().toLowerCase();
+    debugPrint('DHEALTH_DEBUG: doctor email="$email" sanitized="${email?.replaceAll('.', '_').replaceAll('@', '_at_')}"');
     final query = _linksQuery;
 
     if (user == null || email == null || email.isEmpty || query == null) {
@@ -253,14 +259,17 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
                 final docs = snapshot.data?.docs ?? const [];
                 final patientIds = <String>{};
                 for (final d in docs) {
-                  final patientId = (d.data()['patientId'] as String?)?.trim();
-                  if (patientId != null && patientId.isNotEmpty) {
+                  // Document ID in doctorLinks/{sanitized}/patients/{patientId}
+                  // is the patientId directly; prefer the field if present
+                  // for resilience, falling back to the doc ID.
+                  final data = d.data();
+                  final patientId =
+                      (data['patientId'] as String?)?.trim().isNotEmpty ==
+                              true
+                          ? (data['patientId'] as String).trim()
+                          : d.id;
+                  if (patientId.isNotEmpty) {
                     patientIds.add(patientId);
-                    continue;
-                  }
-                  final segments = d.reference.path.split('/');
-                  if (segments.length >= 2 && segments.first == 'users') {
-                    patientIds.add(segments[1]);
                   }
                 }
                 final patients = patientIds.toList()..sort();

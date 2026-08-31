@@ -6,7 +6,6 @@ import 'package:dhealth/models/weekly_self_efficacy_pulse.dart';
 import 'package:dhealth/models/pro_assessment.dart';
 import 'package:dhealth/models/weekly_focus.dart';
 import 'package:dhealth/models/medication_profile.dart';
-import 'package:dhealth/debug_agent_log.dart';
 import 'package:dhealth/services/doctor_patient_link_service.dart';
 import 'package:dhealth/models/flare_event.dart';
 import 'package:dhealth/models/medication_exception_event.dart';
@@ -26,14 +25,6 @@ class DoctorPortalDataService {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user?.email == null) {
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_portal_data_service.dart:getPatientLogs',
-        message: 'no doctor email on current user',
-        hypothesisId: 'H1',
-        data: {'userNull': user == null},
-      );
-      // #endregion
       return [];
     }
 
@@ -41,14 +32,6 @@ class DoctorPortalDataService {
       patientId: patientId,
       doctorEmail: user!.email!,
     );
-    // #region agent log
-    agentDebugLog(
-      location: 'doctor_portal_data_service.dart:getPatientLogs',
-      message: 'hasAccess result',
-      hypothesisId: 'H1',
-      data: {'hasAccess': hasAccess, 'days': days, 'patientIdLen': patientId.length},
-    );
-    // #endregion
     if (!hasAccess) return [];
 
     return _fetchLogsForPatient(patientId, days);
@@ -66,30 +49,10 @@ class DoctorPortalDataService {
           .orderBy('date', descending: true)
           .get();
 
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_portal_data_service.dart:_fetchLogsForPatient',
-        message: 'dailyLogs query ok',
-        hypothesisId: 'H2',
-        data: {'docCount': snap.docs.length, 'days': days},
-      );
-      // #endregion
       return snap.docs
           .map((doc) => DailyLog.fromJson(doc.data()))
           .toList();
     } catch (e) {
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_portal_data_service.dart:_fetchLogsForPatient',
-        message: 'dailyLogs query failed (swallowed before)',
-        hypothesisId: 'H2',
-        data: {
-          'errorType': e.runtimeType.toString(),
-          'errorBrief':
-              e.toString().length > 160 ? e.toString().substring(0, 160) : e.toString(),
-        },
-      );
-      // #endregion
       return [];
     }
   }
@@ -303,14 +266,6 @@ class DoctorPortalDataService {
     try {
       final doc = await _db.collection('users').doc(patientId).get();
       if (!doc.exists) return null;
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_portal_data_service.dart:getPatientProfile',
-        message: 'profile doc fetched',
-        hypothesisId: 'H2',
-        data: {'hasData': doc.data() != null, 'patientIdLen': patientId.length},
-      );
-      // #endregion
       return doc.data();
     } catch (_) {
       return null;

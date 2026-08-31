@@ -7,8 +7,6 @@ import 'package:dhealth/screens/doctor_portal_screen.dart';
 import 'package:dhealth/screens/onboarding/onboarding_screen.dart';
 import 'package:dhealth/screens/main_screen.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
-import 'package:dhealth/debug_agent_log.dart';
-
 /// Routes the app by [FirebaseAuth.instance.authStateChanges], user role from
 /// Firestore `users/{uid}/profile`, and local onboarding completion.
 class AuthGate extends StatefulWidget {
@@ -78,17 +76,6 @@ class _AuthGateState extends State<AuthGate> {
             }
 
             final role = _roleFromProfile(profileSnapshot.data?.data());
-            // #region agent log
-            agentDebugLog(
-              location: 'auth_gate.dart:build',
-              message: 'routing decision',
-              hypothesisId: 'H1',
-              data: {
-                'role': role,
-                'profileExists': profileSnapshot.data?.exists ?? false,
-              },
-            );
-            // #endregion
             if (role == 'doctor') {
               return const DoctorPortalScreen();
             }

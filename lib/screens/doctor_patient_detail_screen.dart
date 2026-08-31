@@ -18,8 +18,6 @@ import 'package:dhealth/services/doctor_portal_data_service.dart';
 import 'package:dhealth/services/report_generator_service.dart';
 import 'package:dhealth/services/fhir_bundle_generator.dart';
 import 'package:dhealth/screens/doctor_clinical_thread_screen.dart';
-import 'package:dhealth/debug_agent_log.dart';
-
 /// Read-only view of a linked patient's logs with ABDM report download.
 ///
 /// Doctor can view logs and download PDF or FHIR bundle.
@@ -116,19 +114,6 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
         logs,
         pros,
       );
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_patient_detail_screen.dart:_loadLogs',
-        message: 'load patient data success',
-        hypothesisId: 'H2',
-        data: {
-          'days': _days,
-          'logCount': logs.length,
-          'pulseCount': pulses.length,
-          'proCount': pros.length,
-        },
-      );
-      // #endregion
       setState(() {
         _logs = logs;
         _pulses = pulses;
@@ -143,17 +128,6 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
       });
       _recordDoctorView('logs');
     } catch (e) {
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_patient_detail_screen.dart:_loadLogs',
-        message: 'load patient data failed',
-        hypothesisId: 'H2',
-        data: {
-          'errorType': e.runtimeType.toString(),
-          'errorBrief': e.toString().length > 160 ? e.toString().substring(0, 160) : e.toString(),
-        },
-      );
-      // #endregion
       setState(() {
         _error = e.toString();
         _isLoading = false;

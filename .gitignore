@@ -44,3 +44,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local Cursor IDE settings
+.cursor/
+
+# Android Kotlin session caches
+android/.kotlin/
+
+# Firestore rules emulator scratch dependencies
+ruletest/node_modules/
+
+# Generated Flutter Android plugin registrant
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+
+# Local pulled report PDFs (manual emulator verification)
+/dhealth_report*.pdf

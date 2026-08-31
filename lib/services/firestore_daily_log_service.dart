@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -121,24 +118,6 @@ class FirestoreDailyLogService {
       debugPrint(
         '❌ FirestoreDailyLogService.isConnected ERROR: no authenticated user',
       );
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H1',
-                'location':
-                    'lib/services/firestore_daily_log_service.dart:isConnected',
-                'message': 'isConnected no authenticated user',
-                'data': {},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       return false;
     }
 
@@ -147,45 +126,9 @@ class FirestoreDailyLogService {
         {'timestamp': FieldValue.serverTimestamp()},
         SetOptions(merge: true),
       );
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H1',
-                'location':
-                    'lib/services/firestore_daily_log_service.dart:isConnected',
-                'message': 'isConnected success',
-                'data': {'userId': _effectiveUserId},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       return true;
     } catch (e) {
       debugPrint('Firestore not connected: $e');
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H1',
-                'location':
-                    'lib/services/firestore_daily_log_service.dart:isConnected',
-                'message': 'isConnected error',
-                'data': {'error': e.toString()},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       return false;
     }
   }

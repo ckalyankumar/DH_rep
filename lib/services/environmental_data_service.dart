@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -12,24 +11,6 @@ class EnvironmentalDataService {
     weatherApiKey = dotenv.env['WEATHER_API_KEY'] ?? '';
 
     if (weatherApiKey.isEmpty) {
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H3',
-                'location':
-                    'lib/services/environmental_data_service.dart:constructor',
-                'message': 'missing WEATHER_API_KEY',
-                'data': {},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       throw Exception('WEATHER_API_KEY not found in .env file');
     }
   }
@@ -37,24 +18,6 @@ class EnvironmentalDataService {
   Future<Position> getCurrentLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H3',
-                'location':
-                    'lib/services/environmental_data_service.dart:getCurrentLocation',
-                'message': 'location services disabled',
-                'data': {},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       throw Exception('Location services are disabled');
     }
 
@@ -64,49 +27,10 @@ class EnvironmentalDataService {
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // #region agent log
-      try {
-        File('debug-7bd69c.log').writeAsStringSync(
-          '${jsonEncode({
-                'sessionId': '7bd69c',
-                'runId': 'pre-fix',
-                'hypothesisId': 'H3',
-                'location':
-                    'lib/services/environmental_data_service.dart:getCurrentLocation',
-                'message': 'location permission permanently denied',
-                'data': {'permission': permission.toString()},
-                'timestamp': DateTime.now().millisecondsSinceEpoch,
-              })}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       throw Exception('Location permission permanently denied');
     }
 
     final position = await Geolocator.getCurrentPosition();
-    // #region agent log
-    try {
-      File('debug-7bd69c.log').writeAsStringSync(
-        '${jsonEncode({
-              'sessionId': '7bd69c',
-              'runId': 'pre-fix',
-              'hypothesisId': 'H3',
-              'location':
-                  'lib/services/environmental_data_service.dart:getCurrentLocation',
-              'message': 'location acquired',
-              'data': {
-                'latitude': position.latitude,
-                'longitude': position.longitude,
-              },
-              'timestamp': DateTime.now().millisecondsSinceEpoch,
-            })}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
-    } catch (_) {}
-    // #endregion
     return position;
   }
 

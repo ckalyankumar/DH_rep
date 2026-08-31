@@ -1,8 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-
-import 'package:dhealth/debug_agent_log.dart';
-
 /// Saves user profile to Firestore at users/{uid}/profile.
 abstract class FirestoreUserProfileService {
   /// Updates role at users/{uid} (profile.role field). Merges with existing data.
@@ -79,8 +76,10 @@ abstract class FirestoreUserProfileService {
   /// Returns a map with keys like 'condition', 'dateOfBirth', 'abhaId' when present.
   static Future<Map<String, dynamic>?> getProfile(String uid) async {
     try {
-      final snap =
-          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get(const GetOptions(source: Source.server));
       if (!snap.exists) return null;
       final data = snap.data();
       final profile = data?['profile'];
@@ -99,20 +98,6 @@ abstract class FirestoreUserProfileService {
     try {
       final profile = await getProfile(uid);
       final raw = profile?['role'];
-      // #region agent log
-      agentDebugLog(
-        location: 'firestore_user_profile_service.dart:getRole',
-        message: 'profile role resolution',
-        hypothesisId: 'H1',
-        data: {
-          'profileNull': profile == null,
-          'rawRoleType': raw.runtimeType.toString(),
-          'rawIsDoctorOrPatient': raw is String &&
-              (raw.trim().toLowerCase() == 'doctor' ||
-                  raw.trim().toLowerCase() == 'patient'),
-        },
-      );
-      // #endregion
       if (raw is String) {
         final role = raw.trim().toLowerCase();
         if (role == 'doctor' || role == 'patient') {
@@ -121,14 +106,6 @@ abstract class FirestoreUserProfileService {
       }
       return 'patient';
     } catch (_) {
-      // #region agent log
-      agentDebugLog(
-        location: 'firestore_user_profile_service.dart:getRole',
-        message: 'getRole caught error, defaulting patient',
-        hypothesisId: 'H1',
-        data: {'error': true},
-      );
-      // #endregion
       return 'patient';
     }
   }

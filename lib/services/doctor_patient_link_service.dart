@@ -1,17 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
-import 'package:dhealth/debug_agent_log.dart';
 import 'package:dhealth/models/doctor_patient_link.dart';
 
 /// Manages patient–doctor links for read-only doctor portal access.
 ///
 /// Firestore structure:
-/// - `users/{patientId}/sharedWithDoctors/{sanitizedDoctorEmail}` — patient grants access
+/// - `users/{patientId}/sharedWithDoctors/{sanitizedDoctorEmail}` — source of
+///   truth, owned and read/written by the patient.
 ///   Fields: doctorEmail, consentedAt, createdAt, status
-///
-/// For doctor query: collection group 'sharedWithDoctors' where doctorEmail == currentUser.email.
-/// Alternatively we use a top-level `doctorPatientLinks` collection for simpler querying.
+/// - `doctorLinks/{sanitizedDoctorEmail}/patients/{patientId}` — a parallel,
+///   doctor-queryable index of the same link, written whenever the patient
+///   creates/revokes a link. This exists because a `collectionGroup` query
+///   using `FieldPath.documentId()` requires a full document *path* (even
+///   segment count), not a bare ID — so a doctor cannot query across all
+///   patients' `sharedWithDoctors` subcollections that way. Querying this
+///   top-level `doctorLinks/{sanitizedDoctorEmail}/patients` collection
+///   directly (not as a collection group) has no such restriction, and the
+///   security rule can check the parent doc ID against the caller's own
+///   token email directly.
+///   Fields: patientId, patientDisplayName, status, createdAt, consentedAt
 class DoctorPatientLinkService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -20,7 +27,8 @@ class DoctorPatientLinkService {
   }
 
   /// Patient grants consent: create link so doctor can read their data.
-  /// Requires authenticated patient.
+  /// Requires authenticated patient. Writes both the source-of-truth link
+  /// and the doctor-queryable index in a single batch.
   Future<void> createLink({
     required String patientId,
     String? patientDisplayName,
@@ -31,24 +39,41 @@ class DoctorPatientLinkService {
       throw StateError('Only the patient can create a share link.');
     }
 
-    final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
-    final ref = _db
+    final normalizedEmail = doctorEmail.trim().toLowerCase();
+    final sanitized = _sanitizeEmailForPath(normalizedEmail);
+    final now = DateTime.now();
+
+    final linkRef = _db
         .collection('users')
         .doc(patientId)
         .collection('sharedWithDoctors')
         .doc(sanitized);
+    final indexRef = _db
+        .collection('doctorLinks')
+        .doc(sanitized)
+        .collection('patients')
+        .doc(patientId);
 
-    final now = DateTime.now();
-    await ref.set({
-      'doctorEmail': doctorEmail.trim().toLowerCase(),
+    final payload = {
+      'doctorEmail': normalizedEmail,
       'patientDisplayName': patientDisplayName,
       'status': LinkStatus.active.name,
       'createdAt': now.toIso8601String(),
       'consentedAt': now.toIso8601String(),
-    });
+    };
+    final indexPayload = {
+      ...payload,
+      'patientId': patientId,
+    };
+
+    final batch = _db.batch();
+    batch.set(linkRef, payload);
+    batch.set(indexRef, indexPayload);
+    await batch.commit();
   }
 
-  /// Patient revokes access.
+  /// Patient revokes access. Updates both the source-of-truth link and the
+  /// doctor-queryable index.
   Future<void> revokeLink({
     required String patientId,
     required String doctorEmail,
@@ -59,47 +84,52 @@ class DoctorPatientLinkService {
     }
 
     final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
-    final ref = _db
+    final revokedAt = DateTime.now().toIso8601String();
+
+    final linkRef = _db
         .collection('users')
         .doc(patientId)
         .collection('sharedWithDoctors')
         .doc(sanitized);
+    final indexRef = _db
+        .collection('doctorLinks')
+        .doc(sanitized)
+        .collection('patients')
+        .doc(patientId);
 
-    await ref.update({
+    final updatePayload = {
       'status': LinkStatus.revoked.name,
-      'revokedAt': DateTime.now().toIso8601String(),
-    });
+      'revokedAt': revokedAt,
+    };
+
+    final batch = _db.batch();
+    batch.update(linkRef, updatePayload);
+    batch.set(indexRef, updatePayload, SetOptions(merge: true));
+    await batch.commit();
   }
 
-  /// Doctor: list all patients who have shared access with this doctor's email.
+  /// Doctor: list all patients who have shared access with this doctor's
+  /// email. Queries the `doctorLinks/{sanitizedDoctorEmail}/patients` index
+  /// directly (a normal subcollection query, not a collectionGroup), which
+  /// the security rule permits by checking the parent doc ID against the
+  /// caller's own token email.
   Future<List<DoctorPatientLink>> getLinksForDoctor(String doctorEmail) async {
     final normalizedEmail = doctorEmail.trim().toLowerCase();
+    final sanitized = _sanitizeEmailForPath(normalizedEmail);
 
     try {
       final snap = await _db
-          .collectionGroup('sharedWithDoctors')
-          .where('doctorEmail', isEqualTo: normalizedEmail)
+          .collection('doctorLinks')
+          .doc(sanitized)
+          .collection('patients')
           .where('status', isEqualTo: LinkStatus.active.name)
           .get();
 
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_patient_link_service.dart:getLinksForDoctor',
-        message: 'collection group query ok',
-        hypothesisId: 'H3',
-        data: {
-          'docCount': snap.docs.length,
-          'emailLen': normalizedEmail.length,
-        },
-      );
-      // #endregion
-
       return snap.docs.map((doc) {
         final data = doc.data();
-        final patientId = doc.reference.parent.parent?.id ?? '';
         return DoctorPatientLink(
           id: doc.id,
-          patientId: patientId,
+          patientId: (data['patientId'] as String?) ?? doc.id,
           patientDisplayName: data['patientDisplayName'] as String?,
           doctorEmail: data['doctorEmail'] as String? ?? doctorEmail,
           status:
@@ -116,19 +146,6 @@ class DoctorPatientLinkService {
         );
       }).toList();
     } catch (e, st) {
-      // #region agent log
-      agentDebugLog(
-        location: 'doctor_patient_link_service.dart:getLinksForDoctor',
-        message: 'collection group query failed',
-        hypothesisId: 'H3',
-        data: {
-          'errorType': e.runtimeType.toString(),
-          'errorBrief': e.toString().length > 120
-              ? e.toString().substring(0, 120)
-              : e.toString(),
-        },
-      );
-      // #endregion
       Error.throwWithStackTrace(e, st);
     }
   }

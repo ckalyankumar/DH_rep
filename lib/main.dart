@@ -55,9 +55,15 @@ void main() async {
   FirebaseAuth.instance.authStateChanges().listen((user) async {
     if (user != null) {
       await WearableSyncPrefs.setUid(user.uid);
-      // Sync onboarding condition to Firestore on first login
-      final condition = await OnboardingPrefs.getCondition();
-      await FirestoreUserProfileService.saveCondition(user.uid, condition);
+      // Sync onboarding condition to Firestore on first login — but never for
+      // doctor accounts. Doctors have no patient "condition", and this write
+      // used to race with LoginScreen's _persistRoleForCurrentUser(), so a
+      // doctor could be routed through onboarding before their role landed.
+      final role = await FirestoreUserProfileService.getRole(user.uid);
+      if (role != 'doctor') {
+        final condition = await OnboardingPrefs.getCondition();
+        await FirestoreUserProfileService.saveCondition(user.uid, condition);
+      }
     } else {
       await WearableSyncPrefs.clearUid();
     }

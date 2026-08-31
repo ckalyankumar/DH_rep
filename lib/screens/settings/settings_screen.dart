@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -580,27 +578,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _showSnackBar('Generating export...');
     try {
-      // #region agent log
-      try {
-        final logFile = File('debug-210858.log');
-        final logEntry = <String, dynamic>{
-          'sessionId': '210858',
-          'runId': 'pre-fix',
-          'hypothesisId': 'SET-A',
-          'location': 'settings_screen.dart:_downloadMyData',
-          'message': 'downloadMyData_started',
-          'data': {
-            'uid': user.uid,
-          },
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        };
-        logFile.writeAsStringSync(
-          '${jsonEncode(logEntry)}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
       final logService = FirestoreDailyLogService(userId: user.uid);
       final logs = await logService.getLogsForLastDays(365);
       final pulseSnap = await FirebaseFirestore.instance
@@ -684,58 +661,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         mimeType: 'application/json',
       );
 
-      // #region agent log
-      try {
-        final logFile = File('debug-210858.log');
-        final logEntry = <String, dynamic>{
-          'sessionId': '210858',
-          'runId': 'pre-fix',
-          'hypothesisId': 'SET-B',
-          'location': 'settings_screen.dart:_downloadMyData',
-          'message': 'downloadMyData_completed',
-          'data': {
-            'logCount': logs.length,
-            'pulseCount': pulses.length,
-            'proCount': pros.length,
-          },
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        };
-        logFile.writeAsStringSync(
-          '${jsonEncode(logEntry)}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
-
       if (mounted) {
         _showSnackBar(
           'Exported: PDF and FHIR bundle saved',
         );
       }
     } catch (e) {
-      // #region agent log
-      try {
-        final logFile = File('debug-4d8c79.log');
-        final logEntry = <String, dynamic>{
-          'sessionId': '4d8c79',
-          'runId': 'pre-fix',
-          'hypothesisId': 'SET-C',
-          'location': 'settings_screen.dart:_downloadMyData',
-          'message': 'downloadMyData_error',
-          'data': {
-            'error': e.toString(),
-          },
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        };
-        logFile.writeAsStringSync(
-          '${jsonEncode(logEntry)}\n',
-          mode: FileMode.append,
-          flush: true,
-        );
-      } catch (_) {}
-      // #endregion
-
       if (mounted) _showSnackBar('Export failed: $e');
     }
   }

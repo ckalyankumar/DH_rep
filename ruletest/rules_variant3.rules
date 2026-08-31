@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Hardcoded parent-doc ID — no email sanitization at all.
+    match /doctorLinks/{sanitizedEmail}/patients/{patientId} {
+      allow read: if isSignedIn()
+        && sanitizedEmail == 'kalyan136_at_rediffmail_com';
+    }
+  }
+}
