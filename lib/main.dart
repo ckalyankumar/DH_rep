@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, kIsWeb, LicenseRegistry, LicenseEntryWithLineBreaks;
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'firebase_options.dart';
 
@@ -25,8 +27,17 @@ Duration _nextSyncDelay() {
   return next.difference(now);
 }
 
+/// Registers the SIL OFL text bundled with Noto Sans (not a pub package).
+void _registerBundledFontLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('assets/fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(['Noto Sans (Google Fonts / Noto Project)'], license);
+  });
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _registerBundledFontLicenses();
 
   // Load environment variables
   try {

@@ -17,6 +17,9 @@ class UserDataDeleteService {
     'flareEvents',
     'flareCandidates',
     'medicationExceptions',
+    'weeklyFocus',
+    'medicationProfile',
+    'alertDismissals',
   ];
 
   /// Delete all documents in a collection (no nested subcollections).
@@ -32,7 +35,10 @@ class UserDataDeleteService {
   }
 
   /// Delete sharedWithDoctors docs and their nested doctorSession, clinicalMessages.
+  /// Also removes the parallel `doctorLinks/{sanitizedEmail}/patients/{uid}`
+  /// index entry so the doctor's patient list does not keep an orphan.
   static Future<void> _deleteSharedWithDoctors(DocumentReference<Map<String, dynamic>> userDoc) async {
+    final uid = userDoc.id;
     final sharedCol = userDoc.collection('sharedWithDoctors');
     final snapshot = await sharedCol.get();
     for (final doc in snapshot.docs) {
@@ -44,6 +50,14 @@ class UserDataDeleteService {
       for (final d in msgSnap.docs) {
         await d.reference.delete();
       }
+      // Ignore missing index rows (links created before doctorLinks existed).
+      await _db
+          .collection('doctorLinks')
+          .doc(doc.id)
+          .collection('patients')
+          .doc(uid)
+          .delete()
+          .catchError((Object _) {});
       await doc.reference.delete();
     }
   }

@@ -799,6 +799,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: Text(_appVersion.isEmpty ? '…' : _appVersion),
           ),
           const Divider(height: 1),
+          ListTile(
+            title: const Text('Open source licenses'),
+            subtitle: const Text('Noto Sans / SIL Open Font License'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showLicensePage(
+              context: context,
+              applicationName: 'DHealth',
+              applicationVersion: _appVersion.isEmpty ? null : _appVersion,
+            ),
+          ),
+          const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
             child: Text(
