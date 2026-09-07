@@ -31,9 +31,11 @@ class InsightEngine {
   static double calculateCorrelation(List<num> x, List<num> y) {
     if (x.length != y.length || x.isEmpty) return 0.0;
 
-    // Calculate means
-    final meanX = x.reduce((a, b) => a + b) / x.length;
-    final meanY = y.reduce((a, b) => a + b) / y.length;
+    // fold<double>: callers often pass List<double>, and List.reduce then
+    // requires (double, double) => double. A (num, num) => num lambda fails
+    // at runtime.
+    final meanX = x.fold<double>(0, (sum, v) => sum + v.toDouble()) / x.length;
+    final meanY = y.fold<double>(0, (sum, v) => sum + v.toDouble()) / y.length;
 
     // Calculate Pearson correlation coefficient
     double numerator = 0;

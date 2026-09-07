@@ -1,32 +1,22 @@
 import 'package:dhealth/models/daily_log.dart';
 
-/// Service to deduplicate daily logs
-/// Keeps only 1 entry per day (highest risk score)
+/// Collapses multiple same-day check-ins via [DailyLog.aggregateWithSameDay].
 class LogDeduplicationService {
-  /// Deduplicate logs - keep highest risk entry per day
+  /// One aggregated [DailyLog] per calendar day (per-field merge, not max-risk).
   static List<DailyLog> deduplicateByDay(List<DailyLog> logs) {
     if (logs.isEmpty) return [];
 
-    // Group logs by day
     final Map<String, List<DailyLog>> logsByDay = {};
 
     for (final log in logs) {
       final dayKey = _getDayKey(log.date);
-      if (!logsByDay.containsKey(dayKey)) {
-        logsByDay[dayKey] = [];
-      }
-      logsByDay[dayKey]!.add(log);
+      logsByDay.putIfAbsent(dayKey, () => []).add(log);
     }
 
-    // For each day, keep only the highest risk entry
-    final List<DailyLog> deduplicatedLogs = [];
+    final List<DailyLog> deduplicatedLogs = [
+      for (final dayLogs in logsByDay.values) DailyLog.aggregateAll(dayLogs),
+    ];
 
-    logsByDay.forEach((day, dayLogs) {
-      dayLogs.sort((a, b) => b.calculateRiskScore().compareTo(a.calculateRiskScore()));
-      deduplicatedLogs.add(dayLogs.first);
-    });
-
-    // Sort by date (most recent first)
     deduplicatedLogs.sort((a, b) => b.date.compareTo(a.date));
 
     return deduplicatedLogs;
@@ -53,7 +43,7 @@ class LogDeduplicationService {
       'logsRemoved': logsRemoved,
       'reductionPercentage': reductionPercentage.toStringAsFixed(1),
       'message': logsRemoved > 0
-          ? 'Kept highest risk entry for each day. Removed $logsRemoved duplicate(s)'
+          ? 'Aggregated multiple check-ins per day. Folded $logsRemoved extra entr${logsRemoved == 1 ? 'y' : 'ies'}'
           : 'All logs are unique (1 per day)',
     };
   }
@@ -66,12 +56,11 @@ class LogDeduplicationService {
     return logsForDay;
   }
 
-  /// Get highest risk entry for a date
+  /// Aggregated log for a calendar date, or null if none.
   static DailyLog? getHighestRiskForDate(List<DailyLog> logs, DateTime date) {
     final logsForDay = getLogsForDate(logs, date);
     if (logsForDay.isEmpty) return null;
-    logsForDay.sort((a, b) => b.calculateRiskScore().compareTo(a.calculateRiskScore()));
-    return logsForDay.first;
+    return DailyLog.aggregateAll(logsForDay);
   }
 
   /// Private helper to get day key (YYYY-MM-DD)

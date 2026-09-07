@@ -15,6 +15,7 @@ import 'package:dhealth/screens/settings/settings_screen.dart';
 import 'package:dhealth/services/firestore_weekly_pulse_service.dart';
 import 'package:dhealth/widgets/weekly_pulse_dialog.dart';
 import 'package:dhealth/models/log_analytics.dart';
+import 'package:dhealth/models/refined_risk_score_cache.dart';
 import 'package:dhealth/models/pro_assessment.dart';
 import 'package:dhealth/services/insight_models.dart';
 import 'package:dhealth/data/disorder_registry.dart';
@@ -60,6 +61,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _isWeb = false;
   bool _weeklyPulseCheckDone = false;
   Future<List<TriggerProCorrelation>?>? _correlationsFuture;
+  final RefinedRiskScoreCache _riskScoreCache = RefinedRiskScoreCache();
 
   @override
   void initState() {
@@ -361,11 +363,11 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _openDailyLogScreen() {
+  Future<void> _openDailyLogScreen() async {
     if (_dailyLogService == null) return;
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      Navigator.push(
+      await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => const LoginScreen(),
@@ -373,7 +375,7 @@ class _MainScreenState extends State<MainScreen> {
       );
       return;
     }
-    Navigator.push(
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => DailyLogScreen(
@@ -383,6 +385,9 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
+    // Rebuild so [_riskScoreCache] can see any log created/edited on that
+    // screen. The cache itself only recomputes if log ids actually changed.
+    if (mounted) setState(() {});
   }
 
   Widget _buildBodyWithRedFlagBanner() {
@@ -476,15 +481,18 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
 
-    final analytics = LogAnalytics(_dailyLogService!.getLogs());
+    final logs = _dailyLogService!.getLogs();
+    final analytics = LogAnalytics(logs);
     final hasTodayLog = analytics.getTodayLog() != null;
-    // TODO: getRefinedRiskScore (identifyTriggers / personal weights) runs
-    // synchronously in build() on every rebuild. Cache or offload via
-    // compute() once patients have 30+ days of logs.
-    final riskResult = analytics.getRefinedRiskScore(
-      selectedCondition,
-      DisorderRegistry.getDisorder(selectedCondition),
+    final riskResult = _riskScoreCache.getOrCompute(
+      logs: logs,
+      condition: selectedCondition,
       envData: _envData,
+      compute: () => analytics.getRefinedRiskScore(
+        selectedCondition,
+        DisorderRegistry.getDisorder(selectedCondition),
+        envData: _envData,
+      ),
     );
     final todayRiskScore = riskResult.finalScore;
 

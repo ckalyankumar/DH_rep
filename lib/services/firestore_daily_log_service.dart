@@ -41,7 +41,12 @@ class FirestoreDailyLogService {
     }
   }
 
-  /// Get a log for a specific date
+  /// Get the aggregated log for a calendar date.
+  ///
+  /// [dailyLogs] is keyed by document id, not by day. Historical saves may
+  /// leave more than one doc on the same date; those are folded client-side.
+  /// Data already collapsed under the old whole-record-wins rule cannot be
+  /// reconstructed.
   Future<DailyLog?> getLogForDate(DateTime date) async {
     try {
       final start = DateTime(date.year, date.month, date.day);
@@ -50,11 +55,13 @@ class FirestoreDailyLogService {
       final snap = await _logsCol
           .where('date', isGreaterThanOrEqualTo: start.toIso8601String())
           .where('date', isLessThan: end.toIso8601String())
-          .limit(1)
           .get();
 
       if (snap.docs.isEmpty) return null;
-      return DailyLog.fromJson(snap.docs.first.data());
+      final logs = snap.docs
+          .map((doc) => DailyLog.fromJson(doc.data()))
+          .toList();
+      return DailyLog.aggregateAll(logs);
     } catch (e) {
       debugPrint('Error fetching log for date: $e');
       return null;

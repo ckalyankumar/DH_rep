@@ -4,8 +4,7 @@ import 'package:dhealth/models/daily_log.dart';
 import 'package:dhealth/services/log_deduplication_service.dart';
 import 'package:uuid/uuid.dart';
 
-/// Service to manage daily logs with automatic deduplication
-/// Keeps only highest risk entry per day
+/// Service to manage daily logs with same-day per-field aggregation.
 class DailyLogService {
   static final DailyLogService _instance = DailyLogService._internal();
   final List<DailyLog> _logs = [];
@@ -16,7 +15,7 @@ class DailyLogService {
 
   DailyLogService._internal();
 
-  /// Get today's log (highest risk for today)
+  /// Get today's aggregated log, if any.
   DailyLog? getTodayLog() {
     return getHighestRiskForDate(DateTime.now());
   }
@@ -47,6 +46,7 @@ class DailyLogService {
     bool sleepDisruptionWasOverridden = false,
     bool stressWasOverridden = false,
   }) {
+    final recordedAt = date ?? DateTime.now();
     final newLog = DailyLog(
       id: const Uuid().v4(),
       condition: condition,
@@ -58,7 +58,8 @@ class DailyLogService {
       sleepQuality: sleepQuality,
       sleepDisruption: sleepDisruption,
       notes: notes,
-      date: date ?? DateTime.now(),
+      date: recordedAt,
+      createdAt: recordedAt,
       triggers: triggers,
       structuredTriggerIds: structuredTriggerIds,
       treatmentNoteAction: treatmentNoteAction,
@@ -80,13 +81,11 @@ class DailyLogService {
     return removeLog(logId);
   }
 
-  /// Add a new log with automatic deduplication
-  /// If a log already exists for today with lower risk, it gets replaced.
+  /// Add a check-in, merging per-field with any existing log for the same day.
   /// Set [quiet] to true for bulk imports (e.g. Firestore sync) to avoid log spam.
   void addLog(DailyLog log, {bool quiet = false}) {
     final today = DateTime(log.date.year, log.date.month, log.date.day);
 
-    // Find existing log for the same day
     final existingIndex = _logs.indexWhere((existingLog) {
       final existingDay = DateTime(
         existingLog.date.year,
@@ -97,29 +96,15 @@ class DailyLogService {
     });
 
     if (existingIndex != -1) {
-      // Log exists for this day
-      final existingLog = _logs[existingIndex];
-      final newRiskScore = log.calculateRiskScore();
-      final existingRiskScore = existingLog.calculateRiskScore();
-
-      if (newRiskScore > existingRiskScore) {
-        // New log has higher risk - replace it
-        _logs[existingIndex] = log;
-        if (!quiet) {
-          debugPrint(
-            '✅ Replaced log for ${_formatDate(today)}: Risk $existingRiskScore → $newRiskScore',
-          );
-        }
-      } else {
-        // Existing log has higher or equal risk - keep existing
-        if (!quiet) {
-          debugPrint(
-            '⏭️ Kept higher risk log for ${_formatDate(today)}: $existingRiskScore ≥ $newRiskScore',
-          );
-        }
+      final merged =
+          DailyLog.aggregateWithSameDay(_logs[existingIndex], log);
+      _logs[existingIndex] = merged;
+      if (!quiet) {
+        debugPrint(
+          '✅ Aggregated log for ${_formatDate(today)}: Risk ${merged.calculateRiskScore()}',
+        );
       }
     } else {
-      // No log for this day - add it
       _logs.add(log);
       if (!quiet) {
         debugPrint(

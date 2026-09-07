@@ -237,11 +237,6 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
     });
 
     try {
-      final existingLog = widget.dailyLogService.getTodayLog();
-      if (existingLog != null) {
-        widget.dailyLogService.removeLogById(existingLog.id);
-      }
-
       final triggerLabels = <String>[];
       for (final cat in _triggerCategories) {
         for (final opt in cat.options) {

@@ -120,6 +120,155 @@ class DailyLog {
     return score > 100 ? 100 : score;
   }
 
+  /// Rank for same-day lesion aggregation: none < mild < moderate < severe.
+  /// Unknown values rank with 'none' so they cannot outrank a known severity.
+  static int lesionSeverityRank(String severity) {
+    switch (severity.toLowerCase().trim()) {
+      case 'severe':
+        return 3;
+      case 'moderate':
+        return 2;
+      case 'mild':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  /// Gap at which itch/lesion switch from "same observation" (latest) to
+  /// "separate later observation" (max/worst). Exactly 2 hours uses max.
+  static const Duration sameObservationWindow = Duration(hours: 2);
+
+  /// When this check-in was recorded.
+  ///
+  /// Prefers [createdAt]. Falls back to [date], which DailyLogScreen sets to
+  /// `DateTime.now()` (time of day included). After a merge, [date] is updated
+  /// to the later observation so folding compares against the most recent
+  /// prior check-in, not the first-created identity.
+  static DateTime recordedAt(DailyLog log) {
+    final created = log.createdAt;
+    if (created == null) return log.date;
+    return log.date.isAfter(created) ? log.date : created;
+  }
+
+  /// Per-field merge of two check-ins for the same calendar day.
+  ///
+  /// Argument order does not matter: chronological order is taken from
+  /// [recordedAt], so Firestore sync (newest-first) still folds correctly
+  /// when combined with [aggregateAll]'s sort.
+  static DailyLog aggregateWithSameDay(DailyLog existing, DailyLog incoming) {
+    final first = _earlierCreated(existing, incoming);
+    final earlier = _earlierObservation(existing, incoming);
+    final latest = identical(earlier, existing) ? incoming : existing;
+
+    return DailyLog(
+      id: first.id,
+      createdAt: first.createdAt,
+      date: latest.date,
+      condition: first.condition,
+      itchIntensity: _windowedItch(earlier, latest),
+      lesionSeverity: _windowedLesion(earlier, latest),
+      mood: latest.mood,
+      stressLevel: latest.stressLevel,
+      sleepQuality: latest.sleepQuality,
+      sleepDisruption: latest.sleepDisruption,
+      affectedAreas: _unionPreserveOrder(
+        existing.affectedAreas,
+        incoming.affectedAreas,
+      ),
+      notes: latest.notes,
+      triggers: _unionNullable(existing.triggers, incoming.triggers),
+      structuredTriggerIds: _unionNullable(
+        existing.structuredTriggerIds,
+        incoming.structuredTriggerIds,
+      ),
+      treatmentNoteAction: latest.treatmentNoteAction,
+      treatmentNoteText: latest.treatmentNoteText,
+      wearableSleepQuality: latest.wearableSleepQuality,
+      wearableSleepDisruption: latest.wearableSleepDisruption,
+      wearableHrv: latest.wearableHrv,
+      wearableSteps: latest.wearableSteps,
+      hasWearableData: latest.hasWearableData,
+      wearableRawSleepMinutes: latest.wearableRawSleepMinutes,
+      wearableRawAwakenings: latest.wearableRawAwakenings,
+      wearableRawDeviceStress: latest.wearableRawDeviceStress,
+      wearableProvider: latest.wearableProvider,
+      wearablePrefillSyncedAt: latest.wearablePrefillSyncedAt,
+      sleepQualityWasOverridden: latest.sleepQualityWasOverridden,
+      sleepDisruptionWasOverridden: latest.sleepDisruptionWasOverridden,
+      stressWasOverridden: latest.stressWasOverridden,
+    );
+  }
+
+  /// Fold every check-in for one day, chronological by [recordedAt].
+  static DailyLog aggregateAll(List<DailyLog> logs) {
+    if (logs.isEmpty) {
+      throw ArgumentError('Cannot aggregate an empty log list');
+    }
+    if (logs.length == 1) return logs.first;
+    final ordered = List<DailyLog>.from(logs)
+      ..sort((a, b) {
+        final byTime = recordedAt(a).compareTo(recordedAt(b));
+        if (byTime != 0) return byTime;
+        return a.id.compareTo(b.id);
+      });
+    return ordered.reduce(aggregateWithSameDay);
+  }
+
+  static DateTime _createdOrDate(DailyLog log) => log.createdAt ?? log.date;
+
+  static DailyLog _earlierCreated(DailyLog a, DailyLog b) {
+    final cmp = _createdOrDate(a).compareTo(_createdOrDate(b));
+    if (cmp < 0) return a;
+    if (cmp > 0) return b;
+    return a.id.compareTo(b.id) <= 0 ? a : b;
+  }
+
+  static DailyLog _earlierObservation(DailyLog a, DailyLog b) {
+    final cmp = recordedAt(a).compareTo(recordedAt(b));
+    if (cmp < 0) return a;
+    if (cmp > 0) return b;
+    return a.id.compareTo(b.id) <= 0 ? a : b;
+  }
+
+  static bool _isSeparateObservation(DailyLog earlier, DailyLog later) {
+    return recordedAt(later).difference(recordedAt(earlier)) >=
+        sameObservationWindow;
+  }
+
+  static int _windowedItch(DailyLog earlier, DailyLog later) {
+    if (_isSeparateObservation(earlier, later)) {
+      return earlier.itchIntensity > later.itchIntensity
+          ? earlier.itchIntensity
+          : later.itchIntensity;
+    }
+    return later.itchIntensity;
+  }
+
+  static String _windowedLesion(DailyLog earlier, DailyLog later) {
+    if (_isSeparateObservation(earlier, later)) {
+      return lesionSeverityRank(earlier.lesionSeverity) >=
+              lesionSeverityRank(later.lesionSeverity)
+          ? earlier.lesionSeverity
+          : later.lesionSeverity;
+    }
+    return later.lesionSeverity;
+  }
+
+  static List<String> _unionPreserveOrder(List<String> a, List<String> b) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final item in [...a, ...b]) {
+      if (seen.add(item)) out.add(item);
+    }
+    return out;
+  }
+
+  static List<String>? _unionNullable(List<String>? a, List<String>? b) {
+    final union = _unionPreserveOrder(a ?? const [], b ?? const []);
+    return union.isEmpty ? null : union;
+  }
+
   /// Convert to JSON for storage/transmission
   Map<String, dynamic> toJson() {
     return {

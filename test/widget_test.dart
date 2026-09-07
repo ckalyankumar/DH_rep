@@ -13,9 +13,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:dhealth/data/disorder_registry.dart';
+import 'package:dhealth/models/daily_log.dart';
+import 'package:dhealth/models/log_analytics.dart';
 import 'package:dhealth/screens/doctor_portal_screen.dart';
 import 'package:dhealth/screens/login_screen.dart';
 import 'package:dhealth/screens/main_screen.dart';
+import 'package:dhealth/services/daily_log_service.dart';
 import 'package:dhealth/widgets/auth_gate.dart';
 
 Widget _app(Widget home) => MaterialApp(home: home);
@@ -40,6 +44,7 @@ void main() {
       'onboarding_complete': true,
       'onboarding_condition': 'psoriasis',
     });
+    DailyLogService().clearAllLogs();
   });
 
   group('AuthGate routing', () {
@@ -128,6 +133,49 @@ void main() {
       expect(find.widgetWithText(AppBar, 'Recommendations'), findsOneWidget);
       expect(find.text('Self-Care'), findsOneWidget);
       expect(find.text('Discuss with Doctor'), findsOneWidget);
+    });
+
+    testWidgets('adding a today log then rebuilding updates the risk score',
+        (tester) async {
+      await tester.pumpWidget(_app(const MainScreen()));
+      await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
+      expect(find.text('No log for today yet'), findsOneWidget);
+
+      final today = DateTime.now();
+      DailyLogService().addLog(
+        DailyLog(
+          id: 'today-log',
+          date: today,
+          condition: 'psoriasis',
+          mood: 4,
+          itchIntensity: 4,
+          stressLevel: 3,
+          lesionSeverity: 'mild',
+          affectedAreas: const ['arm'],
+          sleepQuality: 4,
+          sleepDisruption: false,
+          notes: '',
+        ),
+      );
+
+      // Tab switch is an unrelated setState. Home is not rebuilt until we
+      // return; the cache must then see the new log id rather than keep the
+      // empty-log result from the first paint.
+      await tester.tap(find.text('Insights'));
+      await tester.pump();
+      await tester.tap(find.text('Home'));
+      await tester.pump();
+
+      expect(find.text('No log for today yet'), findsNothing);
+      expect(find.text("Today's Risk Score"), findsOneWidget);
+
+      final expected = LogAnalytics(DailyLogService().getLogs())
+          .getRefinedRiskScore(
+            'psoriasis',
+            DisorderRegistry.getDisorder('psoriasis'),
+          )
+          .finalScore;
+      expect(find.text('$expected / 100'), findsOneWidget);
     });
   });
 

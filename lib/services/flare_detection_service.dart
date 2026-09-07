@@ -4,6 +4,7 @@ import 'package:dhealth/models/flare_candidate.dart';
 import 'package:dhealth/models/flare_event.dart';
 import 'package:dhealth/services/firestore_flare_candidate_service.dart';
 import 'package:dhealth/services/firestore_flare_event_service.dart';
+import 'package:dhealth/services/log_deduplication_service.dart';
 
 class FlareDetectionService {
   static const int itchThreshold = 7;
@@ -258,15 +259,7 @@ class FlareDetectionService {
   }
 
   static List<DailyLog> _dedupeByDay(List<DailyLog> logs) {
-    final byDay = <String, DailyLog>{};
-    for (final log in logs) {
-      final key = _dayKey(log.date);
-      final existing = byDay[key];
-      if (existing == null || log.calculateRiskScore() > existing.calculateRiskScore()) {
-        byDay[key] = log;
-      }
-    }
-    return byDay.values.toList();
+    return LogDeduplicationService.deduplicateByDay(logs);
   }
 
   static bool _areConsecutiveDays(DateTime a, DateTime b) {
