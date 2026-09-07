@@ -1,161 +1,216 @@
+// Widget tests for the live app shell (AuthGate / MainScreen / DoctorPortal).
+//
+// LoginScreen role chips, validation, and role-persistence data shape are
+// covered in `doctor_login_test.dart` (Groups 1–3) and are not duplicated here.
+//
+// Firebase is not initialized. AuthGate and DoctorPortalScreen are tested via
+// injected fakes (`authStateChanges`, FakeFirebaseFirestore), matching the
+// doctor_login_test.dart approach.
+
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:dhealth/app.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:dhealth/screens/doctor_portal_screen.dart';
+import 'package:dhealth/screens/login_screen.dart';
+import 'package:dhealth/screens/main_screen.dart';
+import 'package:dhealth/widgets/auth_gate.dart';
+
+Widget _app(Widget home) => MaterialApp(home: home);
+
+/// Advance frames until [finder] appears, without waiting on infinite spinners.
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  int maxFrames = 40,
+}) async {
+  for (var i = 0; i < maxFrames; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (finder.evaluate().isNotEmpty) return;
+  }
+}
 
 void main() {
-  group('DHealth App - Widget Tests', () {
-    testWidgets('App starts and shows Dashboard', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({
+      'onboarding_complete': true,
+      'onboarding_condition': 'psoriasis',
+    });
+  });
+
+  group('AuthGate routing', () {
+    testWidgets('signed-out session shows LoginScreen', (tester) async {
+      await tester.pumpWidget(
+        _app(AuthGate(authStateChanges: Stream<User?>.value(null))),
+      );
+      await _pumpUntilFound(tester, find.byType(LoginScreen));
+
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.text('Patient Login'), findsOneWidget);
+      expect(find.text("I'm a Patient"), findsOneWidget);
+      expect(find.text("I'm a Doctor"), findsOneWidget);
+    });
+
+    test('roleFromUserProfile: doctor → DoctorPortalScreen destination', () {
+      expect(
+        roleFromUserProfile({
+          'profile': {'role': 'doctor'},
+        }),
+        'doctor',
+      );
+    });
+
+    test('roleFromUserProfile: patient does not map to doctor', () {
+      expect(
+        roleFromUserProfile({
+          'profile': {'role': 'patient'},
+        }),
+        'patient',
+      );
+    });
+
+    test('roleFromUserProfile: missing/invalid role defaults to patient', () {
+      expect(roleFromUserProfile(null), 'patient');
+      expect(roleFromUserProfile({}), 'patient');
+      expect(
+        roleFromUserProfile({
+          'profile': {'role': 'admin'},
+        }),
+        'patient',
+      );
+    });
+
+    test('roleFromUserProfile trims and lower-cases before routing', () {
+      expect(
+        roleFromUserProfile({
+          'profile': {'role': '  Doctor  '},
+        }),
+        'doctor',
+      );
+    });
+  });
+
+  group('MainScreen patient home', () {
+    testWidgets('renders condition selector, dashboard, check-in, and tabs',
+        (tester) async {
+      await tester.pumpWidget(_app(const MainScreen()));
+      await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
 
       expect(find.text('DHealth'), findsWidgets);
-      expect(find.byKey(const ValueKey('dashboardButton')), findsOneWidget);
-      expect(find.byKey(const ValueKey('dailyLogButton')), findsOneWidget);
-      expect(find.byKey(const ValueKey('predictionsButton')), findsOneWidget);
-      expect(find.byKey(const ValueKey('recommendationsButton')), findsOneWidget);
       expect(find.text('Select Your Condition'), findsOneWidget);
+      expect(find.text('Dashboard'), findsOneWidget);
+      expect(find.text('No log for today yet'), findsOneWidget);
+      expect(find.text("Create Today's Log"), findsOneWidget);
+      expect(find.text('Start Daily Check-In'), findsOneWidget);
+      expect(find.text('Daily Symptom Log'), findsOneWidget);
+
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Reports'), findsOneWidget);
+      expect(find.text('Insights'), findsOneWidget);
+      expect(find.text('Recommendations'), findsOneWidget);
+
+      expect(find.byType(DropdownButton<String>), findsOneWidget);
     });
 
-    testWidgets('Condition selector works', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
+    testWidgets('Recommendations tab opens RecommendationsScreen',
+        (tester) async {
+      await tester.pumpWidget(_app(const MainScreen()));
+      await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
 
-      final conditionDropdown = find.byKey(const ValueKey('conditionSelector'));
-      expect(conditionDropdown, findsOneWidget);
+      await tester.tap(find.text('Recommendations'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-      await tester.tap(conditionDropdown);
-      await tester.pumpAndSettle();
+      expect(find.widgetWithText(AppBar, 'Recommendations'), findsOneWidget);
+      expect(find.text('Self-Care'), findsOneWidget);
+      expect(find.text('Discuss with Doctor'), findsOneWidget);
+    });
+  });
 
-      expect(find.text('Psoriasis'), findsWidgets);
-      expect(find.text('Atopic Dermatitis (Eczema)'), findsWidgets);
+  group('DoctorPortalScreen', () {
+    testWidgets('no doctor session shows sign-in prompt', (tester) async {
+      await tester.pumpWidget(
+        _app(DoctorPortalScreen(firestore: FakeFirebaseFirestore())),
+      );
+      await tester.pump();
+
+      expect(find.text('Your Patients'), findsOneWidget);
+      expect(
+        find.text('Sign in as a doctor to view patients.'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('Dashboard cards display correct data', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
+    testWidgets('doctor session with no shares shows empty state',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          DoctorPortalScreen(
+            firestore: FakeFirebaseFirestore(),
+            doctorEmail: 'dr@clinic.com',
+          ),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('No patients yet'));
 
-      expect(find.byKey(const ValueKey('flareRiskCard')), findsOneWidget);
-      expect(find.byKey(const ValueKey('severityTrendsCard')), findsOneWidget);
-      expect(find.byKey(const ValueKey('activeRecommendationsCard')), findsOneWidget);
-
-      expect(find.byKey(const ValueKey('riskLevelMedium')), findsOneWidget);
-      expect(find.text('64'), findsOneWidget);
-      expect(find.text('12 decrease'), findsOneWidget);
-      expect(find.text('3'), findsOneWidget);
+      expect(find.text('No patients yet'), findsOneWidget);
+      expect(
+        find.text(
+          'Patients will appear here once they share their data with you from the dHealth app.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Read-only · You can only see patients who have shared access with you.',
+        ),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('Navigation between screens works', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
+    testWidgets('seeded active share shows patient name and actions',
+        (tester) async {
+      final fakeDb = FakeFirebaseFirestore();
+      await fakeDb
+          .collection('doctorLinks')
+          .doc('dr_at_clinic_com')
+          .collection('patients')
+          .doc('patient1')
+          .set({
+        'patientId': 'patient1',
+        'status': 'active',
+      });
+      await fakeDb.collection('users').doc('patient1').set({
+        'profile': {'displayName': 'Ada Patient'},
+      });
+      await fakeDb
+          .collection('doctorLinks')
+          .doc('dr_at_clinic_com')
+          .collection('patients')
+          .doc('patient2')
+          .set({
+        'patientId': 'patient2',
+        'status': 'revoked',
+      });
 
-      // Tap Daily Log Button
-      final dailyLogButton = find.byKey(const ValueKey('dailyLogButton'));
-      expect(dailyLogButton, findsOneWidget);
-      await tester.tap(dailyLogButton);
-      await tester.pumpAndSettle();
-      expect(find.text('Daily Symptom Check-In'), findsOneWidget);
+      await tester.pumpWidget(
+        _app(
+          DoctorPortalScreen(
+            firestore: fakeDb,
+            doctorEmail: 'dr@clinic.com',
+          ),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Ada Patient'));
 
-      // Tap Predictions Button
-      final predictionsButton = find.byKey(const ValueKey('predictionsButton'));
-      expect(predictionsButton, findsOneWidget);
-      await tester.tap(predictionsButton);
-      await tester.pumpAndSettle();
-      expect(find.text('Flare Risk Analysis'), findsOneWidget);
-
-      // Tap Recommendations Button
-      final recommendationsButton = find.byKey(const ValueKey('recommendationsButton'));
-      expect(recommendationsButton, findsOneWidget);
-      await tester.tap(recommendationsButton);
-      await tester.pumpAndSettle();
-      expect(find.text('Personalized Recommendations'), findsOneWidget);
-    });
-
-    testWidgets('Daily Log form elements render correctly', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
-
-      final dailyLogButton = find.byKey(const ValueKey('dailyLogButton'));
-      await tester.tap(dailyLogButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('How are you feeling today?'), findsOneWidget);
-      expect(find.text('Symptom Severity'), findsOneWidget);
-      expect(find.text('Visible Lesions/Rash'), findsOneWidget);
-      expect(find.text('Sleep Quality'), findsOneWidget);
-      expect(find.text('Additional Notes (Optional)'), findsOneWidget);
-
-      // Mood emoji selectors by key
-      expect(find.byKey(const ValueKey('moodEmojiVeryBad')), findsOneWidget);
-      expect(find.byKey(const ValueKey('moodEmojiBad')), findsOneWidget);
-      expect(find.byKey(const ValueKey('moodEmojiNeutral')), findsOneWidget);
-      expect(find.byKey(const ValueKey('moodEmojiGood')), findsOneWidget);
-      expect(find.byKey(const ValueKey('moodEmojiVeryGood')), findsOneWidget);
-
-      // Sliders
-      expect(find.byType(Slider), findsWidgets);
-
-      // Buttons
-      expect(find.byKey(const ValueKey('saveTodaysLogButton')), findsOneWidget);
-      expect(find.byKey(const ValueKey('clearFormButton')), findsOneWidget);
-    });
-
-    testWidgets('Mood selector interaction works', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
-
-      final dailyLogButton = find.byKey(const ValueKey('dailyLogButton'));
-      await tester.tap(dailyLogButton);
-      await tester.pumpAndSettle();
-
-      final moodEmojiGood = find.byKey(const ValueKey('moodEmojiGood'));
-      expect(moodEmojiGood, findsOneWidget);
-
-      await tester.tap(moodEmojiGood);
-      await tester.pumpAndSettle();
-
-      // Add your assertion here depending on changes expected on mood selection
-    });
-
-    testWidgets('Predictions screen displays risk factors', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
-
-      final predictionsButton = find.byKey(const ValueKey('predictionsButton'));
-      await tester.tap(predictionsButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Current Risk Level'), findsOneWidget);
-      expect(find.text('Days Until Peak Risk'), findsOneWidget);
-      expect(find.text('Confidence Score'), findsOneWidget);
-      expect(find.text('Contributing Risk Factors'), findsOneWidget);
-      expect(find.text('7-Day Risk Forecast'), findsOneWidget);
-      expect(find.text('Historical Flare Timeline'), findsOneWidget);
-    });
-
-    testWidgets('Recommendations display with priority badges', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
-
-      final recommendationsButton = find.byKey(const ValueKey('recommendationsButton'));
-      await tester.tap(recommendationsButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Implement Stress Management Routine'), findsOneWidget);
-      expect(find.text('Optimize Winter Skin Protection'), findsOneWidget);
-      expect(find.text('Enhance Medication Timing Consistency'), findsOneWidget);
-
-      expect(find.text('HIGH'), findsWidgets);
-      expect(find.text('MEDIUM'), findsWidgets);
-    });
-
-    testWidgets('Back navigation from detail screens works', (WidgetTester tester) async {
-      await tester.pumpWidget(const DermCareApp());
-
-      final predictionsButton = find.byKey(const ValueKey('predictionsButton'));
-      await tester.tap(predictionsButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Flare Risk Analysis'), findsOneWidget);
-
-      final backButton = find.byKey(const ValueKey('backToDashboardButton'));
-
-      expect(backButton, findsOneWidget);
-      await tester.tap(backButton);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Select Your Condition'), findsOneWidget);
+      expect(find.text('Ada Patient'), findsOneWidget);
+      expect(find.text('Download Report'), findsOneWidget);
+      expect(find.text('Message'), findsOneWidget);
+      expect(find.text('No patients yet'), findsNothing);
     });
   });
 }

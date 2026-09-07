@@ -637,7 +637,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
 
       final pdfBytes = await doc.save();
-      await saveBytesToFile(
+      final pdfPath = await saveBytesToFile(
         pdfBytes,
         'dhealth_report_${user.uid}.pdf',
         mimeType: 'application/pdf',
@@ -655,7 +655,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
       final jsonStr = const JsonEncoder.withIndent('  ').convert(bundle);
       final fhirBytes = utf8.encode(jsonStr);
-      await saveBytesToFile(
+      final fhirPath = await saveBytesToFile(
         fhirBytes,
         'dhealth_fhir_${user.uid}.json',
         mimeType: 'application/json',
@@ -663,7 +663,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (mounted) {
         _showSnackBar(
-          'Exported: PDF and FHIR bundle saved',
+          'Exported to Downloads:\n$pdfPath\n$fhirPath',
         );
       }
     } catch (e) {

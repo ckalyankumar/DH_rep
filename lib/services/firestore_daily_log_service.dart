@@ -122,9 +122,10 @@ class FirestoreDailyLogService {
     }
 
     try {
-      await _db.collection('_health_check').doc('ping').set(
-        {'timestamp': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
+      // Read-only probe: rules allow signed-in read and deny all writes on
+      // `_health_check`. Source.server forces a real round-trip.
+      await _db.collection('_health_check').doc('ping').get(
+        const GetOptions(source: Source.server),
       );
       return true;
     } catch (e) {

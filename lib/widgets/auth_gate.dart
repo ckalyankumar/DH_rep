@@ -7,30 +7,42 @@ import 'package:dhealth/screens/doctor_portal_screen.dart';
 import 'package:dhealth/screens/onboarding/onboarding_screen.dart';
 import 'package:dhealth/screens/main_screen.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
+
+/// Maps a `users/{uid}` document to a routing role. Unknown/missing → patient.
+String roleFromUserProfile(Map<String, dynamic>? data) {
+  final profile = data?['profile'];
+  if (profile is Map) {
+    final raw = profile['role'];
+    if (raw is String) {
+      final role = raw.trim().toLowerCase();
+      if (role == 'doctor' || role == 'patient') {
+        return role;
+      }
+    }
+  }
+  return 'patient';
+}
+
 /// Routes the app by [FirebaseAuth.instance.authStateChanges], user role from
 /// Firestore `users/{uid}/profile`, and local onboarding completion.
 class AuthGate extends StatefulWidget {
-  const AuthGate({super.key});
+  const AuthGate({
+    super.key,
+    this.authStateChanges,
+    this.firestore,
+  });
+
+  /// Test seam. Production uses [FirebaseAuth.instance.authStateChanges].
+  final Stream<User?>? authStateChanges;
+
+  /// Test seam. Production uses [FirebaseFirestore.instance].
+  final FirebaseFirestore? firestore;
 
   @override
   State<AuthGate> createState() => _AuthGateState();
 }
 
 class _AuthGateState extends State<AuthGate> {
-  String _roleFromProfile(Map<String, dynamic>? data) {
-    final profile = data?['profile'];
-    if (profile is Map) {
-      final raw = profile['role'];
-      if (raw is String) {
-        final role = raw.trim().toLowerCase();
-        if (role == 'doctor' || role == 'patient') {
-          return role;
-        }
-      }
-    }
-    return 'patient';
-  }
-
   Widget _buildLoading(BuildContext context) {
     return Scaffold(
       body: Center(
@@ -51,8 +63,11 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    final authStream =
+        widget.authStateChanges ?? FirebaseAuth.instance.authStateChanges();
+
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: authStream,
       builder: (context, authSnapshot) {
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return _buildLoading(context);
@@ -63,21 +78,23 @@ class _AuthGateState extends State<AuthGate> {
           return const LoginScreen();
         }
 
+        final db = widget.firestore ?? FirebaseFirestore.instance;
+
         // Stream profile so doctor role written after sign-in updates routing.
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(user.uid)
-              .snapshots(),
+          stream: db.collection('users').doc(user.uid).snapshots(),
           builder: (context, profileSnapshot) {
             if (profileSnapshot.connectionState == ConnectionState.waiting &&
                 !profileSnapshot.hasData) {
               return _buildLoading(context);
             }
 
-            final role = _roleFromProfile(profileSnapshot.data?.data());
+            final role = roleFromUserProfile(profileSnapshot.data?.data());
             if (role == 'doctor') {
-              return const DoctorPortalScreen();
+              return DoctorPortalScreen(
+                firestore: db,
+                currentUser: user,
+              );
             }
 
             return FutureBuilder<bool>(

@@ -47,5 +47,9 @@
 	<true/>
 	<key>NSCalendarsUsageDescription</key>
 	<string>DHealth uses the calendar to add your self-care routine reminders.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

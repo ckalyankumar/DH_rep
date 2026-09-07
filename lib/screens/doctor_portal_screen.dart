@@ -15,26 +15,56 @@ import 'package:dhealth/screens/doctor_clinical_thread_screen.dart';
 ///
 /// Pilot behavior: generate PDF on demand; no persisted Storage URL required.
 class DoctorPortalScreen extends StatefulWidget {
-  const DoctorPortalScreen({super.key});
+  const DoctorPortalScreen({
+    super.key,
+    this.firestore,
+    this.currentUser,
+    this.doctorEmail,
+  });
+
+  /// Test seam. Production uses [FirebaseFirestore.instance].
+  final FirebaseFirestore? firestore;
+
+  /// Test seam. Production uses [FirebaseAuth.instance.currentUser].
+  final User? currentUser;
+
+  /// Test seam when a [User] cannot be constructed (email-only fake session).
+  final String? doctorEmail;
 
   @override
   State<DoctorPortalScreen> createState() => _DoctorPortalScreenState();
 }
 
 class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final DoctorPortalDataService _dataService = DoctorPortalDataService();
+  DoctorPortalDataService? _dataServiceInstance;
+  DoctorPortalDataService get _dataService =>
+      _dataServiceInstance ??= DoctorPortalDataService();
 
   final Map<String, String> _displayNameByPatientId = {};
   final Map<String, bool> _busyByPatientId = {};
 
-  User? get _user => FirebaseAuth.instance.currentUser;
+  FirebaseFirestore get _db =>
+      widget.firestore ?? FirebaseFirestore.instance;
+
+  User? get _user {
+    if (widget.currentUser != null) return widget.currentUser;
+    if (widget.firestore != null || widget.doctorEmail != null) {
+      return null;
+    }
+    return FirebaseAuth.instance.currentUser;
+  }
+
+  String? get _effectiveEmail {
+    final override = widget.doctorEmail?.trim().toLowerCase();
+    if (override != null && override.isNotEmpty) return override;
+    return _user?.email?.trim().toLowerCase();
+  }
 
   /// Queries the `doctorLinks/{sanitizedDoctorEmail}/patients` index
   /// directly (a normal subcollection query, not a collectionGroup). See
   /// the full explanation in DoctorPatientLinkService.getLinksForDoctor.
   Query<Map<String, dynamic>>? get _linksQuery {
-    final email = _user?.email?.trim().toLowerCase();
+    final email = _effectiveEmail;
     if (email == null || email.isEmpty) return null;
     final sanitized = email.replaceAll('.', '_').replaceAll('@', '_at_');
     return _db
@@ -207,12 +237,11 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = _user;
-    final email = user?.email?.trim().toLowerCase();
+    final email = _effectiveEmail;
     debugPrint('DHEALTH_DEBUG: doctor email="$email" sanitized="${email?.replaceAll('.', '_').replaceAll('@', '_at_')}"');
     final query = _linksQuery;
 
-    if (user == null || email == null || email.isEmpty || query == null) {
+    if (email == null || email.isEmpty || query == null) {
       return Scaffold(
         appBar: AppBar(title: const Text('Your Patients')),
         body: const Center(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -5,6 +6,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 
 class EnvironmentalDataService {
+  static const _locationTimeout = Duration(seconds: 8);
+
   late String weatherApiKey;
 
   EnvironmentalDataService() {
@@ -30,8 +33,25 @@ class EnvironmentalDataService {
       throw Exception('Location permission permanently denied');
     }
 
-    final position = await Geolocator.getCurrentPosition();
-    return position;
+    if (permission == LocationPermission.denied) {
+      throw Exception('Location permission denied');
+    }
+
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      return lastKnown;
+    }
+
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: _locationTimeout,
+        ),
+      );
+    } on TimeoutException {
+      throw Exception('Location request timed out');
+    }
   }
 
   Future<Map<String, dynamic>> getWeatherData(

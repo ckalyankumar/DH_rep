@@ -199,14 +199,13 @@ class _MainScreenState extends State<MainScreen> {
         }
       }
 
-      // Fetch environmental data
-      if (_envService != null) {
-        try {
-          await _fetchEnvironmentalData();
-        } catch (e) {
-          debugPrint('Environmental data fetch failed: $e');
-        }
-      }
+      // Do not await location/weather on the startup path: Geolocator on
+      // Android can stall the UI thread and surface an ANR. Kick off after
+      // the first frame; manual Refresh still calls [_fetchEnvironmentalData].
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _envService == null) return;
+        _fetchEnvironmentalData();
+      });
     } catch (e) {
       debugPrint('Critical initialization error: $e');
       setState(() {
@@ -337,24 +336,28 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _fetchEnvironmentalData() async {
     if (_envService == null) return;
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final data = await _envService!.getAllEnvironmentalData();
+      if (!mounted) return;
       setState(() {
         _envData = data;
       });
       debugPrint('Environmental data fetched');
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = e.toString();
       });
       debugPrint('Error fetching environmental data: $e');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -443,8 +446,12 @@ class _MainScreenState extends State<MainScreen> {
             DisorderRegistry.getDisorder(selectedCondition),
           ).where((f) => f.urgency == 'urgent').toList();
 
+    if (urgentFlags.isEmpty) {
+      return content;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
-    if (urgentFlags.isEmpty || user == null) {
+    if (user == null) {
       return content;
     }
 
@@ -471,6 +478,9 @@ class _MainScreenState extends State<MainScreen> {
 
     final analytics = LogAnalytics(_dailyLogService!.getLogs());
     final hasTodayLog = analytics.getTodayLog() != null;
+    // TODO: getRefinedRiskScore (identifyTriggers / personal weights) runs
+    // synchronously in build() on every rebuild. Cache or offload via
+    // compute() once patients have 30+ days of logs.
     final riskResult = analytics.getRefinedRiskScore(
       selectedCondition,
       DisorderRegistry.getDisorder(selectedCondition),
