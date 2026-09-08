@@ -22,8 +22,9 @@ import 'package:dhealth/models/doctor_patient_link.dart';
 class DoctorPatientLinkService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  /// Lowercases internally so a future caller cannot produce a mismatched path.
   static String _sanitizeEmailForPath(String email) {
-    return email.replaceAll('.', '_').replaceAll('@', '_at_');
+    return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
   /// Patient grants consent: create link so doctor can read their data.

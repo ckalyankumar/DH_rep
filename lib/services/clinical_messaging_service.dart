@@ -14,8 +14,9 @@ class ClinicalMessagingService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final DoctorPatientLinkService _linkService = DoctorPatientLinkService();
 
-  static String _sanitizeEmailForPath(String email) {
-    return email.replaceAll('.', '_').replaceAll('@', '_at_');
+  /// Lowercases internally so a future caller cannot produce a mismatched path.
+  static String sanitizeEmailForPath(String email) {
+    return email.toLowerCase().replaceAll('.', '_').replaceAll('@', '_at_');
   }
 
   /// Doctor records that they viewed patient data. Call when opening patient detail or downloading report.
@@ -25,7 +26,8 @@ class ClinicalMessagingService {
     String dataScope = 'logs',
   }) async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || user.email?.toLowerCase() != doctorEmail.trim().toLowerCase()) {
+    if (user == null ||
+        user.email?.toLowerCase() != doctorEmail.trim().toLowerCase()) {
       throw StateError('Only the doctor can record a view.');
     }
 
@@ -37,7 +39,7 @@ class ClinicalMessagingService {
       throw StateError('Doctor does not have access to this patient.');
     }
 
-    final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
+    final sanitized = sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
     final ref = _db
         .collection('users')
         .doc(patientId)
@@ -61,7 +63,7 @@ class ClinicalMessagingService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
 
-    final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
+    final sanitized = sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
     final doc = await _db
         .collection('users')
         .doc(patientId)
@@ -89,10 +91,15 @@ class ClinicalMessagingService {
     if (sender != 'patient' && sender != 'doctor') {
       throw ArgumentError('sender must be "patient" or "doctor"');
     }
+    final lengthError = ClinicalMessage.validateContentLength(content);
+    if (lengthError != null) {
+      throw ArgumentError(lengthError);
+    }
     if (sender == 'patient' && user.uid != patientId) {
       throw StateError('Only the patient can send as patient.');
     }
-    if (sender == 'doctor' && user.email?.toLowerCase() != doctorEmail.trim().toLowerCase()) {
+    if (sender == 'doctor' &&
+        user.email?.toLowerCase() != doctorEmail.trim().toLowerCase()) {
       throw StateError('Only the doctor can send as doctor.');
     }
 
@@ -104,7 +111,7 @@ class ClinicalMessagingService {
       throw StateError('No active link between this patient and doctor.');
     }
 
-    final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
+    final sanitized = sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
     final col = _db
         .collection('users')
         .doc(patientId)
@@ -116,18 +123,22 @@ class ClinicalMessagingService {
       'sender': sender,
       'content': content.trim(),
       'sentAt': FieldValue.serverTimestamp(),
-      if (dataRangeReviewed != null && dataRangeReviewed.isNotEmpty) 'dataRangeReviewed': dataRangeReviewed,
+      if (dataRangeReviewed != null && dataRangeReviewed.isNotEmpty)
+        'dataRangeReviewed': dataRangeReviewed,
     };
 
     await col.add(data);
   }
 
   /// Stream messages in the clinical thread, ordered by sentAt ascending.
+  ///
+  /// [includeMetadataChanges] is required so `hasPendingWrites` flipping from
+  /// true → false emits a new snapshot after the local write reaches the server.
   Stream<List<ClinicalMessage>> streamMessages({
     required String patientId,
     required String doctorEmail,
   }) {
-    final sanitized = _sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
+    final sanitized = sanitizeEmailForPath(doctorEmail.trim().toLowerCase());
     return _db
         .collection('users')
         .doc(patientId)
@@ -135,19 +146,38 @@ class ClinicalMessagingService {
         .doc(sanitized)
         .collection('clinicalMessages')
         .orderBy('sentAt', descending: false)
-        .snapshots()
-        .map((snap) => snap.docs.map((doc) {
-              final data = doc.data();
-              final sentAt = data['sentAt'];
-              return ClinicalMessage(
-                id: doc.id,
-                sender: data['sender'] as String? ?? 'patient',
-                content: data['content'] as String? ?? '',
-                sentAt: sentAt is Timestamp
-                    ? sentAt.toDate()
-                    : (sentAt != null ? DateTime.parse(sentAt as String) : DateTime.now()),
-                dataRangeReviewed: data['dataRangeReviewed'] as String?,
-              );
-            }).toList());
+        .snapshots(includeMetadataChanges: true)
+        .map((snap) => snap.docs
+            .map((doc) => messageFromSnapshot(
+                  id: doc.id,
+                  data: doc.data(),
+                  hasPendingWrites: doc.metadata.hasPendingWrites,
+                ))
+            .toList());
+  }
+
+  /// Maps a Firestore document (or a test stand-in) to [ClinicalMessage].
+  ///
+  /// Pass [hasPendingWrites] from `snapshot.metadata.hasPendingWrites`. A
+  /// missing or invalid `sender` becomes [ClinicalMessage.unknownSender]
+  /// rather than silently defaulting to the patient.
+  static ClinicalMessage messageFromSnapshot({
+    required String id,
+    required Map<String, dynamic> data,
+    required bool hasPendingWrites,
+  }) {
+    final sentAt = data['sentAt'];
+    return ClinicalMessage(
+      id: id,
+      sender: ClinicalMessage.normalizedSender(data['sender']),
+      content: data['content'] as String? ?? '',
+      sentAt: sentAt is Timestamp
+          ? sentAt.toDate()
+          : (sentAt != null
+              ? DateTime.parse(sentAt as String)
+              : DateTime.now()),
+      dataRangeReviewed: data['dataRangeReviewed'] as String?,
+      hasPendingWrites: hasPendingWrites,
+    );
   }
 }

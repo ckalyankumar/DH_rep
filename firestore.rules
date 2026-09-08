@@ -1,5 +1,5 @@
 // DHealth Firestore Security Rules
-// Last updated: 2026-03-13
+// Last updated: 2026-09-08
 // Pilot version — reviewed before scaling beyond 50 patients
 // Sprint update: added medicationProfile, weeklyFocus,
 //   proAlertDismissals; fixed doctor read on user document;
@@ -142,11 +142,18 @@ service cloud.firestore {
         allow delete: if false;
       }
 
-      // Clinical messaging: patient and doctor read/write when link is active
+      // Clinical messaging: patient and doctor read/write when link is active.
+      // Create also requires content to be a string of at most 2000 characters
+      // (matches ClinicalMessage.maxContentLength).
       match /clinicalMessages/{messageId} {
-        allow read, create: if isSignedIn()
+        allow read: if isSignedIn()
           && (isOwner(uid) || docId == sanitizedDoctorEmail())
           && get(/databases/$(database)/documents/users/$(uid)/sharedWithDoctors/$(docId)).data.status == 'active';
+        allow create: if isSignedIn()
+          && (isOwner(uid) || docId == sanitizedDoctorEmail())
+          && get(/databases/$(database)/documents/users/$(uid)/sharedWithDoctors/$(docId)).data.status == 'active'
+          && request.resource.data.content is string
+          && request.resource.data.content.size() <= 2000;
         allow update, delete: if false;
       }
     }

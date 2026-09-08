@@ -10,11 +10,13 @@ import 'package:dhealth/services/clinical_messaging_service.dart';
 class PatientClinicalThreadScreen extends StatefulWidget {
   final String patientId;
   final String doctorEmail;
+  final ClinicalMessagingService? messagingService;
 
   const PatientClinicalThreadScreen({
     super.key,
     required this.patientId,
     required this.doctorEmail,
+    this.messagingService,
   });
 
   @override
@@ -22,8 +24,10 @@ class PatientClinicalThreadScreen extends StatefulWidget {
       _PatientClinicalThreadScreenState();
 }
 
-class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScreen> {
-  final ClinicalMessagingService _messagingService = ClinicalMessagingService();
+class _PatientClinicalThreadScreenState
+    extends State<PatientClinicalThreadScreen> {
+  late final ClinicalMessagingService _messagingService;
+  late final Stream<List<ClinicalMessage>> _messagesStream;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isSending = false;
@@ -32,6 +36,11 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
   @override
   void initState() {
     super.initState();
+    _messagingService = widget.messagingService ?? ClinicalMessagingService();
+    _messagesStream = _messagingService.streamMessages(
+      patientId: widget.patientId,
+      doctorEmail: widget.doctorEmail,
+    );
     _loadLastView();
   }
 
@@ -54,8 +63,15 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
     final content = _controller.text.trim();
     if (content.isEmpty || _isSending) return;
 
+    final lengthError = ClinicalMessage.validateContentLength(content);
+    if (lengthError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(lengthError)),
+      );
+      return;
+    }
+
     setState(() => _isSending = true);
-    _controller.clear();
 
     try {
       await _messagingService.sendMessage(
@@ -64,15 +80,18 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
         sender: 'patient',
         content: content,
       );
-      if (mounted) {
-        _scrollToBottom();
-      }
+      if (!mounted) return;
+      _controller.clear();
+      _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
-        );
+      if (!mounted) return;
+      if (_controller.text.trim().isEmpty) {
+        _controller.text = content;
+        _controller.selection = TextSelection.collapsed(offset: content.length);
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send: $e')),
+      );
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -100,7 +119,8 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
           children: [
             Text(
               widget.doctorEmail,
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+              style:
+                  GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             Text(
               'Clinical thread',
@@ -115,10 +135,7 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
           if (_lastView != null) _buildLastViewed(),
           Expanded(
             child: StreamBuilder<List<ClinicalMessage>>(
-              stream: _messagingService.streamMessages(
-                patientId: widget.patientId,
-                doctorEmail: widget.doctorEmail,
-              ),
+              stream: _messagesStream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(child: Text('Error: ${snapshot.error}'));
@@ -194,15 +211,52 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
   }
 
   Widget _buildMessageBubble(ClinicalMessage msg) {
+    if (msg.hasUnknownSender) {
+      return Align(
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75),
+          decoration: BoxDecoration(
+            color: Colors.amber[50],
+            border: Border.all(color: Colors.amber.shade700),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Unknown sender',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.amber[900],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(msg.content, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 4),
+              _buildTimestampRow(msg),
+            ],
+          ),
+        ),
+      );
+    }
+
     final isDoctor = msg.isFromDoctor;
     return Align(
       alignment: isDoctor ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isDoctor ? Colors.grey[200] : Theme.of(context).primaryColor.withValues(alpha:0.15),
+          color: isDoctor
+              ? Colors.grey[200]
+              : Theme.of(context).primaryColor.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -220,13 +274,34 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
               ),
             ],
             const SizedBox(height: 4),
-            Text(
-              DateFormat('MMM d, HH:mm').format(msg.sentAt),
-              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-            ),
+            _buildTimestampRow(msg),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTimestampRow(ClinicalMessage msg) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (msg.hasPendingWrites) ...[
+          Tooltip(
+            message: 'Sending...',
+            child: Icon(
+              Icons.schedule,
+              size: 12,
+              color: Colors.grey[600],
+              key: ValueKey('pending-write-${msg.id}'),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        Text(
+          DateFormat('MMM d, HH:mm').format(msg.sentAt),
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        ),
+      ],
     );
   }
 
@@ -237,7 +312,7 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
         color: Theme.of(context).scaffoldBackgroundColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -246,17 +321,27 @@ class _PatientClinicalThreadScreenState extends State<PatientClinicalThreadScree
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                hintText: 'Type a message or question...',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              maxLines: 3,
-              minLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) {
+                return TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message or question...',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    counterText: ClinicalMessage.composerCounterText(
+                      _controller.text.length,
+                    ),
+                  ),
+                  maxLength: ClinicalMessage.maxContentLength,
+                  maxLines: 3,
+                  minLines: 1,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                );
+              },
             ),
           ),
           const SizedBox(width: 12),

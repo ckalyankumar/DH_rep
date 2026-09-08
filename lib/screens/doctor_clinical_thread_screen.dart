@@ -13,6 +13,7 @@ class DoctorClinicalThreadScreen extends StatefulWidget {
   final String? patientDisplayName;
   final String doctorEmail;
   final List<DailyLog> logs;
+  final ClinicalMessagingService? messagingService;
 
   const DoctorClinicalThreadScreen({
     super.key,
@@ -20,6 +21,7 @@ class DoctorClinicalThreadScreen extends StatefulWidget {
     required this.patientDisplayName,
     required this.doctorEmail,
     required this.logs,
+    this.messagingService,
   });
 
   @override
@@ -27,8 +29,10 @@ class DoctorClinicalThreadScreen extends StatefulWidget {
       _DoctorClinicalThreadScreenState();
 }
 
-class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen> {
-  final ClinicalMessagingService _messagingService = ClinicalMessagingService();
+class _DoctorClinicalThreadScreenState
+    extends State<DoctorClinicalThreadScreen> {
+  late final ClinicalMessagingService _messagingService;
+  late final Stream<List<ClinicalMessage>> _messagesStream;
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isSending = false;
@@ -37,6 +41,11 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
   @override
   void initState() {
     super.initState();
+    _messagingService = widget.messagingService ?? ClinicalMessagingService();
+    _messagesStream = _messagingService.streamMessages(
+      patientId: widget.patientId,
+      doctorEmail: widget.doctorEmail,
+    );
     _loadLastView();
   }
 
@@ -57,7 +66,8 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
 
   String get _dataRangeReviewed {
     if (widget.logs.isEmpty) return '';
-    final sorted = List<DailyLog>.from(widget.logs)..sort((a, b) => a.date.compareTo(b.date));
+    final sorted = List<DailyLog>.from(widget.logs)
+      ..sort((a, b) => a.date.compareTo(b.date));
     final start = DateFormat('yyyy-MM-dd').format(sorted.first.date);
     final end = DateFormat('yyyy-MM-dd').format(sorted.last.date);
     return '$start to $end';
@@ -67,8 +77,15 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
     final content = _controller.text.trim();
     if (content.isEmpty || _isSending) return;
 
+    final lengthError = ClinicalMessage.validateContentLength(content);
+    if (lengthError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(lengthError)),
+      );
+      return;
+    }
+
     setState(() => _isSending = true);
-    _controller.clear();
 
     try {
       await _messagingService.sendMessage(
@@ -76,17 +93,21 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
         doctorEmail: widget.doctorEmail,
         sender: 'doctor',
         content: content,
-        dataRangeReviewed: _dataRangeReviewed.isNotEmpty ? _dataRangeReviewed : null,
+        dataRangeReviewed:
+            _dataRangeReviewed.isNotEmpty ? _dataRangeReviewed : null,
       );
-      if (mounted) {
-        _scrollToBottom();
-      }
+      if (!mounted) return;
+      _controller.clear();
+      _scrollToBottom();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send: $e')),
-        );
+      if (!mounted) return;
+      if (_controller.text.trim().isEmpty) {
+        _controller.text = content;
+        _controller.selection = TextSelection.collapsed(offset: content.length);
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to send: $e')),
+      );
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -114,7 +135,8 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
           children: [
             Text(
               widget.patientDisplayName ?? 'Patient',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
+              style:
+                  GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             Text(
               'Clinical thread',
@@ -129,10 +151,7 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
           if (_lastView != null) _buildLastViewed(),
           Expanded(
             child: StreamBuilder<List<ClinicalMessage>>(
-              stream: _messagingService.streamMessages(
-                patientId: widget.patientId,
-                doctorEmail: widget.doctorEmail,
-              ),
+              stream: _messagesStream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(child: Text('Error: ${snapshot.error}'));
@@ -216,15 +235,52 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
   }
 
   Widget _buildMessageBubble(ClinicalMessage msg) {
+    if (msg.hasUnknownSender) {
+      return Align(
+        alignment: Alignment.center,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75),
+          decoration: BoxDecoration(
+            color: Colors.amber[50],
+            border: Border.all(color: Colors.amber.shade700),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Unknown sender',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.amber[900],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(msg.content, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 4),
+              _buildTimestampRow(msg),
+            ],
+          ),
+        ),
+      );
+    }
+
     final isDoctor = msg.isFromDoctor;
     return Align(
       alignment: isDoctor ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isDoctor ? Theme.of(context).primaryColor.withValues(alpha:0.15) : Colors.grey[200],
+          color: isDoctor
+              ? Theme.of(context).primaryColor.withValues(alpha: 0.15)
+              : Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -242,13 +298,34 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
               ),
             ],
             const SizedBox(height: 4),
-            Text(
-              DateFormat('MMM d, HH:mm').format(msg.sentAt),
-              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-            ),
+            _buildTimestampRow(msg),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildTimestampRow(ClinicalMessage msg) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (msg.hasPendingWrites) ...[
+          Tooltip(
+            message: 'Sending...',
+            child: Icon(
+              Icons.schedule,
+              size: 12,
+              color: Colors.grey[600],
+              key: ValueKey('pending-write-${msg.id}'),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+        Text(
+          DateFormat('MMM d, HH:mm').format(msg.sentAt),
+          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+        ),
+      ],
     );
   }
 
@@ -259,7 +336,7 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
         color: Theme.of(context).scaffoldBackgroundColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -268,17 +345,27 @@ class _DoctorClinicalThreadScreenState extends State<DoctorClinicalThreadScreen>
       child: Row(
         children: [
           Expanded(
-            child: TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                hintText: 'Type a message...',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              maxLines: 3,
-              minLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _sendMessage(),
+            child: ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) {
+                return TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: 'Type a message...',
+                    border: const OutlineInputBorder(),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    counterText: ClinicalMessage.composerCounterText(
+                      _controller.text.length,
+                    ),
+                  ),
+                  maxLength: ClinicalMessage.maxContentLength,
+                  maxLines: 3,
+                  minLines: 1,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendMessage(),
+                );
+              },
             ),
           ),
           const SizedBox(width: 12),
