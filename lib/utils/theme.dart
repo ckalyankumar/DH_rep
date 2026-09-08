@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
@@ -29,9 +30,15 @@ class AppTheme {
 
   static const _colorSchemeLight = ColorScheme.light(
     primary: Color(0xFF1A6B5A),
+    onPrimary: Color(0xFFFFFFFF),
     secondary: Color(0xFFE8825A),
+    onSecondary: Color(0xFFFFFFFF),
     surface: Color(0xFFFFFFFF),
+    onSurface: Color(0xFF2C3E50),
     error: Color(0xFFB84040),
+    onError: Color(0xFFFFFFFF),
+    outline: borderColor,
+    surfaceContainerHighest: Color(0xFFD5DDD9),
   );
 
   static ThemeData get lightTheme {
@@ -46,6 +53,11 @@ class AppTheme {
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
         titleTextStyle: const TextStyle(
           fontFamily: 'Fraunces',
           fontSize: 20,
@@ -58,8 +70,10 @@ class AppTheme {
         backgroundColor: Colors.white,
         selectedItemColor: Color(0xFF1A6B5A),
         unselectedItemColor: Color(0xFF8AA69B),
-        selectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+        selectedLabelStyle:
+            TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle:
+            TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
         elevation: 8,
         type: BottomNavigationBarType.fixed,
       ),
@@ -88,13 +102,45 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF1A6B5A),
-          foregroundColor: Colors.white,
+          backgroundColor: _colorSchemeLight.primary,
+          foregroundColor: _colorSchemeLight.onPrimary,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
           ),
         ),
+      ),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: _colorSchemeLight.primary,
+        inactiveTrackColor: const Color(0xFFD5DDD9),
+        thumbColor: _colorSchemeLight.primary,
+        overlayColor: _colorSchemeLight.primary.withValues(alpha: 0.16),
+        trackHeight: 4,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+        activeTickMarkColor: Colors.transparent,
+        inactiveTickMarkColor: Colors.transparent,
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return _colorSchemeLight.primary;
+          }
+          return _colorSchemeLight.surface;
+        }),
+        checkColor: WidgetStateProperty.all(_colorSchemeLight.onPrimary),
+        side: const BorderSide(color: Color(0xFF1A6B5A), width: 1.5),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.all(_colorSchemeLight.primary),
+      ),
+      chipTheme: ChipThemeData(
+        selectedColor: _colorSchemeLight.primary.withValues(alpha: 0.16),
+        checkmarkColor: _colorSchemeLight.primary,
+        labelStyle: const TextStyle(color: textPrimaryColor),
+        secondaryLabelStyle: const TextStyle(color: textPrimaryColor),
+        side: const BorderSide(color: borderColor),
+        backgroundColor: _colorSchemeLight.surface,
       ),
       textTheme: TextTheme(
         displayLarge: GoogleFonts.fraunces(
@@ -142,6 +188,8 @@ class AppTheme {
     );
   }
 
+  /// Unused until a dedicated dark theme is designed. MaterialApp is locked
+  /// to [lightTheme] via ThemeMode.light so this is not applied.
   static ThemeData get darkTheme {
     final darkScheme = ColorScheme.dark(
       primary: const Color(0xFF1A6B5A),
@@ -172,8 +220,10 @@ class AppTheme {
         backgroundColor: darkScheme.surface,
         selectedItemColor: const Color(0xFF1A6B5A),
         unselectedItemColor: Colors.grey[400],
-        selectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+        selectedLabelStyle:
+            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        unselectedLabelStyle:
+            const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
         elevation: 8,
         type: BottomNavigationBarType.fixed,
       ),

@@ -3,8 +3,14 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
-    show debugPrint, kDebugMode, kIsWeb, LicenseRegistry, LicenseEntryWithLineBreaks;
-import 'package:flutter/services.dart' show rootBundle;
+    show
+        debugPrint,
+        kDebugMode,
+        kIsWeb,
+        LicenseRegistry,
+        LicenseEntryWithLineBreaks;
+import 'package:flutter/services.dart'
+    show rootBundle, SystemChrome, SystemUiOverlayStyle;
 
 import 'firebase_options.dart';
 
@@ -31,13 +37,26 @@ Duration _nextSyncDelay() {
 void _registerBundledFontLicenses() {
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString('assets/fonts/OFL.txt');
-    yield LicenseEntryWithLineBreaks(['Noto Sans (Google Fonts / Noto Project)'], license);
+    yield LicenseEntryWithLineBreaks(
+        ['Noto Sans (Google Fonts / Noto Project)'], license);
   });
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _registerBundledFontLicenses();
+
+  // Keep system chrome on the light-theme palette even when the device is in
+  // Dark mode. A dedicated in-app dark theme is deferred.
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: Color(0xFFF5F7F6),
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
 
   // Load environment variables
   try {
@@ -135,8 +154,20 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'DHealth',
       theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      // Do not wire AppTheme.darkTheme: a dedicated dark theme is future work.
+      // Using the light theme for both slots plus ThemeMode.light means the
+      // device Dark mode setting cannot mix Material dark colors with the
+      // app's hardcoded light surfaces.
+      darkTheme: AppTheme.lightTheme,
+      themeMode: ThemeMode.light,
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            platformBrightness: Brightness.light,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: const AuthGate(),
     );
   }

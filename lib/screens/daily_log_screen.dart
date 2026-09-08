@@ -469,7 +469,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF2c3e50),
+                  color: AppTheme.textPrimaryColor,
                 ),
               ),
             ),
@@ -647,7 +647,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
       appBar: AppBar(
         title: const Text('Daily Symptom Log'),
       ),
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           SingleChildScrollView(
@@ -667,12 +667,16 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimaryColor,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        const Text('Current Streak: '),
+                        const Text(
+                          'Current Streak: ',
+                          style: TextStyle(color: AppTheme.textPrimaryColor),
+                        ),
                         Text(
                           '$currentStreak days',
                           style: const TextStyle(
@@ -895,13 +899,25 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: CheckboxListTile(
-                        title: const Text('My sleep was disrupted'),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        visualDensity: VisualDensity.compact,
+                        title: const Text(
+                          'My sleep was disrupted',
+                          style: TextStyle(color: AppTheme.textPrimaryColor),
+                        ),
                         value: sleepDisruption,
                         onChanged: _handleSleepDisruptionChange,
                       ),
                     )
                   : CheckboxListTile(
-                      title: const Text('My sleep was disrupted'),
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      visualDensity: VisualDensity.compact,
+                      title: const Text(
+                        'My sleep was disrupted',
+                        style: TextStyle(color: AppTheme.textPrimaryColor),
+                      ),
                       value: sleepDisruption,
                       onChanged: _handleSleepDisruptionChange,
                     ),
@@ -910,6 +926,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
 
             // Treatment today (optional)
             Card(
+              color: AppTheme.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -920,12 +937,16 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimaryColor,
                       ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
                       'Anything to note about your treatment today?',
-                      style: TextStyle(fontSize: 13),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondaryColor,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Wrap(
@@ -983,6 +1004,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
 
             // Triggers today (collapsible card)
             Card(
+              color: AppTheme.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -1003,6 +1025,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
+                              color: AppTheme.textPrimaryColor,
                             ),
                           ),
                           Icon(
@@ -1020,14 +1043,16 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blueGrey.withValues(alpha:0.08),
+                        color: AppTheme.surfaceAlt,
                         borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: AppTheme.borderColor),
                       ),
                       child: Text(
                         _buildTriggerSummaryLabel(),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
+                          color: AppTheme.textPrimaryColor,
                         ),
                       ),
                     ),
@@ -1118,10 +1143,27 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
               child: TextField(
                 controller: _notesController,
                 maxLines: 4,
+                style: const TextStyle(color: AppTheme.textPrimaryColor),
+                cursorColor: AppTheme.primary,
                 decoration: InputDecoration(
                   hintText: 'Any observations or notes you’d like to remember?',
+                  hintStyle: const TextStyle(color: AppTheme.textMuted),
+                  filled: true,
+                  fillColor: AppTheme.surfaceColor,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: AppTheme.borderColor),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: AppTheme.borderColor),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: AppTheme.primary,
+                      width: 2,
+                    ),
                   ),
                   contentPadding: const EdgeInsets.all(12),
                 ),

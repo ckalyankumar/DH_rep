@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dhealth/utils/theme.dart';
 
 class CustomSliderWidget extends StatefulWidget {
   final String label;
@@ -47,6 +48,8 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final activeColor = widget.activeTrackColor ?? colorScheme.primary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -61,7 +64,7 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF2c3e50),
+                    color: AppTheme.textPrimaryColor,
                   ),
                 ),
                 if (widget.sublabel != null)
@@ -69,7 +72,7 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
                     widget.sublabel!,
                     style: const TextStyle(
                       fontSize: 12,
-                      color: Color(0xFF6c757d),
+                      color: AppTheme.textSecondaryColor,
                       fontWeight: FontWeight.w400,
                     ),
                   ),
@@ -77,10 +80,10 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
             ),
             Text(
               currentValue.toString(),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF3498db),
+                color: activeColor,
               ),
             ),
           ],
@@ -88,11 +91,15 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
         const SizedBox(height: 16),
         SliderTheme(
           data: SliderTheme.of(context).copyWith(
-            activeTrackColor: widget.activeTrackColor ?? const Color(0xFF3498DB),
-            inactiveTrackColor: const Color(0xFFF8F9FA),
-            thumbColor: widget.activeTrackColor ?? const Color(0xFF3498DB),
-            overlayColor: (widget.activeTrackColor ?? const Color(0xFF3498DB))
-                .withValues(alpha:0.2),
+            activeTrackColor: activeColor,
+            inactiveTrackColor: const Color(0xFFD5DDD9),
+            thumbColor: activeColor,
+            overlayColor: activeColor.withValues(alpha: 0.2),
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+            activeTickMarkColor: Colors.transparent,
+            inactiveTickMarkColor: Colors.transparent,
           ),
           child: Slider(
             value: currentValue.toDouble(),
@@ -115,14 +122,14 @@ class _CustomSliderWidgetState extends State<CustomSliderWidget> {
               widget.minLabel ?? '${widget.min}',
               style: const TextStyle(
                 fontSize: 12,
-                color: Color(0xFF6c757d),
+                color: AppTheme.textSecondaryColor,
               ),
             ),
             Text(
               widget.maxLabel ?? '${widget.max}',
               style: const TextStyle(
                 fontSize: 12,
-                color: Color(0xFF6c757d),
+                color: AppTheme.textSecondaryColor,
               ),
             ),
           ],
