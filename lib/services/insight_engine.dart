@@ -23,8 +23,15 @@ class InsightEngine {
   static const _minLogsForInsights = 10;
   static const _minLogsForPatterns = 14;
   static const _minLogsForRiskPrediction = 7;
-  static const _correlationThreshold = 0.55; // Pearson r threshold for "significant" correlation
+  static const _correlationThreshold =
+      0.55; // Pearson r effect-size floor for "significant" correlation
   static const _maxLagDays = 7; // Maximum lag to test (7 days)
+
+  /// Minimum paired observations required before a (possibly lagged) Pearson r
+  /// is eligible. n=3 is enough to *compute* r but the estimate is too noisy
+  /// to choose a "best lag" from; n≥10 is a common rule of thumb for a
+  /// stable Pearson coefficient (see e.g. Bonett & Wright 2000).
+  static const minPointsForLagCorrelation = 10;
 
   /// 1. PEARSON CORRELATION: Statistical relationship between two variables
   /// Returns correlation coefficient from -1.0 (perfect inverse) to 1.0 (perfect positive)
@@ -94,6 +101,11 @@ class InsightEngine {
   /// 2. LAG CORRELATION: Detects delayed relationships
   /// E.g., "Itch increases 2 days after high stress"
   /// Returns map of {lag_days: correlation_coefficient}
+  ///
+  /// A lag is omitted unless at least [minPointsForLagCorrelation] paired
+  /// observations remain after the shift. Callers that pick the "best" lag
+  /// must still apply [bestSignificantLag] so the 8-test search is
+  /// Bonferroni-corrected.
   static Map<int, double> calculateLagCorrelation(
     List<num> cause,
     List<num> effect, {
@@ -107,7 +119,7 @@ class InsightEngine {
       final causeLagged = cause.sublist(0, cause.length - lag);
       final effectShifted = effect.sublist(lag);
 
-      if (causeLagged.length >= 3) {
+      if (causeLagged.length >= minPointsForLagCorrelation) {
         results[lag] = calculateCorrelation(
           causeLagged.cast<num>(),
           effectShifted.cast<num>(),
@@ -116,6 +128,54 @@ class InsightEngine {
     }
 
     return results;
+  }
+
+  /// Bonferroni-adjusted critical |r| via Fisher's z-transform.
+  ///
+  /// Method: Dunn–Bonferroni correction of a two-sided Pearson test, with
+  /// the critical value obtained from Fisher's z (Fisher 1921). For K
+  /// simultaneous lag tests and family-wise α = 0.05:
+  ///
+  ///   α' = α / K
+  ///   z* = Φ^{-1}(1 − α'/2)
+  ///   r_crit = tanh( z* / sqrt(n − 3) )
+  ///
+  /// n is the number of paired observations at that lag. K is the number of
+  /// lags actually tested (eligible under [minPointsForLagCorrelation]), not
+  /// a fixed 8 — that is the valid Bonferroni count.
+  ///
+  /// z* values are standard-normal quantiles (NIST / common z-tables).
+  static double bonferroniCriticalAbsR({
+    required int n,
+    required int lagCount,
+  }) {
+    if (n < 4 || lagCount < 1) return 1.0;
+    final z = _bonferroniZCrit(lagCount);
+    return _tanh(z / sqrt(n - 3));
+  }
+
+  /// Among [lagResults], return the (lag, r) with largest |r| that clears
+  /// both the Bonferroni critical |r| for its remaining n and an optional
+  /// effect-size floor [minAbsR]. Returns null if none qualify.
+  static ({int lag, double r})? bestSignificantLag(
+    Map<int, double> lagResults, {
+    required int seriesLength,
+    double minAbsR = 0.0,
+  }) {
+    if (lagResults.isEmpty) return null;
+    final k = lagResults.length;
+    ({int lag, double r})? best;
+    for (final entry in lagResults.entries) {
+      final n = seriesLength - entry.key;
+      final crit = bonferroniCriticalAbsR(n: n, lagCount: k);
+      final threshold = max(minAbsR, crit);
+      if (entry.value.abs() > threshold) {
+        if (best == null || entry.value.abs() > best.r.abs()) {
+          best = (lag: entry.key, r: entry.value);
+        }
+      }
+    }
+    return best;
   }
 
   /// 3. TRIGGER IDENTIFICATION: Evidence-backed detection with mechanisms
@@ -127,89 +187,47 @@ class InsightEngine {
   ) {
     if (logs.length < _minLogsForInsights) return [];
 
+    final sorted = _sortedByDateAscending(logs);
     final detectedTriggers = <EvidencedTrigger>[];
+    final itchIntensities =
+        sorted.map((l) => l.itchIntensity.toDouble()).toList();
 
-    // Extract metrics from logs
-    final stressLevels = logs.map((l) => l.stressLevel.toDouble()).toList();
-    final itchIntensities = logs.map((l) => l.itchIntensity.toDouble()).toList();
-    final sleepQualities = logs.map((l) => (5 - l.sleepQuality).toDouble()).toList(); // Inverted: poor sleep = high number
-    final moods = logs.map((l) => (5 - l.mood).toDouble()).toList(); // Inverted: poor mood = high number
-
-    // Test each trigger from disorder registry
     for (final registryTrigger in disorder.triggers) {
-      List<num> metricData = [];
+      final mapping = metricMappingForTrigger(registryTrigger.name, sorted);
+      if (mapping == null || mapping.series.isEmpty) continue;
 
-      // Map trigger to available metrics based on name
-      final triggerNameLower = registryTrigger.name.toLowerCase();
-
-      if (triggerNameLower.contains('stress') || 
-          triggerNameLower.contains('psychological')) {
-        metricData = stressLevels;
-      } else if (triggerNameLower.contains('sleep') || 
-                 triggerNameLower.contains('deprivation')) {
-        metricData = sleepQualities;
-      } else if (triggerNameLower.contains('mood') || 
-                 triggerNameLower.contains('depression')) {
-        metricData = moods;
-      } else if (triggerNameLower.contains('temp') || 
-                 triggerNameLower.contains('cold') ||
-                 triggerNameLower.contains('hot')) {
-        // Temperature would require environmental data - skip for now
-        continue;
-      } else if (triggerNameLower.contains('infection') || 
-                 triggerNameLower.contains('bacterial')) {
-        // Infection would require clinical observation - skip for now
-        continue;
-      } else {
-        // Generic correlation with stress if no specific mapping
-        metricData = stressLevels;
-      }
-
-      if (metricData.isEmpty) continue;
-
-      // Calculate immediate correlation
-      final correlation = calculateCorrelation(metricData, itchIntensities);
-
-      // Check for lag correlations
       final lagResults = calculateLagCorrelation(
-        metricData,
+        mapping.series,
         itchIntensities,
         maxLag: _maxLagDays,
       );
 
-      // Find best lag
-      int bestLag = 0;
-      double bestCorrelation = correlation.abs();
+      final best = bestSignificantLag(
+        lagResults,
+        seriesLength: mapping.series.length,
+        minAbsR: _correlationThreshold,
+      );
+      if (best == null) continue;
 
-      lagResults.forEach((lag, lagCorr) {
-        if (lagCorr.abs() > bestCorrelation) {
-          bestCorrelation = lagCorr.abs();
-          bestLag = lag;
-        }
-      });
-
-      // Add trigger if correlation is statistically significant
-      if (bestCorrelation > _correlationThreshold) {
-        detectedTriggers.add(
-          EvidencedTrigger(
-            name: registryTrigger.name,
-            mechanism: registryTrigger.mechanism,
-            baselineIncidence: registryTrigger.baselineIncidence,
-            symptoms: registryTrigger.symptoms,
-            preventionStrategy: registryTrigger.preventionStrategy,
-            expectedImprovement: registryTrigger.expectedImprovement,
-            evidence: registryTrigger.evidence,
-            lagDays: bestLag,
-            correlation: bestCorrelation,
-            confidence: min(100.0, bestCorrelation * 100.0),
-          ),
-        );
-      }
+      final absR = best.r.abs();
+      detectedTriggers.add(
+        EvidencedTrigger(
+          name: registryTrigger.name,
+          mechanism: registryTrigger.mechanism,
+          baselineIncidence: registryTrigger.baselineIncidence,
+          symptoms: registryTrigger.symptoms,
+          preventionStrategy: registryTrigger.preventionStrategy,
+          expectedImprovement: registryTrigger.expectedImprovement,
+          evidence: registryTrigger.evidence,
+          lagDays: best.lag,
+          correlation: absR,
+          confidence: min(100.0, absR * 100.0),
+          coverageNote: mapping.coverageNote,
+        ),
+      );
     }
 
-    // Sort by confidence (highest first)
     detectedTriggers.sort((a, b) => b.confidence.compareTo(a.confidence));
-
     return detectedTriggers;
   }
 
@@ -217,11 +235,12 @@ class InsightEngine {
   static List<PatternInsight> detectPatterns(List<DailyLog> logs) {
     if (logs.length < _minLogsForPatterns) return [];
 
+    final sorted = _sortedByDateAscending(logs);
     final patterns = <PatternInsight>[];
 
     // Group by day of week
     final byDayOfWeek = <int, List<int>>{};
-    for (final log in logs) {
+    for (final log in sorted) {
       final dayOfWeek = log.date.weekday;
       if (!byDayOfWeek.containsKey(dayOfWeek)) {
         byDayOfWeek[dayOfWeek] = [];
@@ -236,8 +255,10 @@ class InsightEngine {
         avgByDay[day] = values.reduce((a, b) => a + b) / values.length;
       });
 
-      final maxDay = avgByDay.entries.reduce((a, b) => a.value > b.value ? a : b);
-      final minDay = avgByDay.entries.reduce((a, b) => a.value < b.value ? a : b);
+      final maxDay =
+          avgByDay.entries.reduce((a, b) => a.value > b.value ? a : b);
+      final minDay =
+          avgByDay.entries.reduce((a, b) => a.value < b.value ? a : b);
       final variance = maxDay.value - minDay.value;
 
       if (variance > 2.5) {
@@ -247,9 +268,8 @@ class InsightEngine {
             description:
                 'Symptoms peak on ${_getDayName(maxDay.key)} (${maxDay.value.toStringAsFixed(1)}/10) and improve on ${_getDayName(minDay.key)} (${minDay.value.toStringAsFixed(1)}/10)',
             confidence: 0.75,
-            occurrences: logs
-                .where((l) => l.date.weekday == maxDay.key)
-                .length,
+            occurrences:
+                sorted.where((l) => l.date.weekday == maxDay.key).length,
             predictability: 'High',
           ),
         );
@@ -257,19 +277,17 @@ class InsightEngine {
     }
 
     // Detect temporal trends (improving vs worsening over time)
-    if (logs.length >= 14) {
-      final firstHalf = logs.sublist(0, (logs.length / 2).toInt());
-      final secondHalf = logs.sublist((logs.length / 2).toInt());
+    if (sorted.length >= 14) {
+      final firstHalf = sorted.sublist(0, (sorted.length / 2).toInt());
+      final secondHalf = sorted.sublist((sorted.length / 2).toInt());
 
-      final firstHalfAvg = firstHalf
-              .map((l) => l.itchIntensity)
-              .reduce((a, b) => a + b) /
-          firstHalf.length;
+      final firstHalfAvg =
+          firstHalf.map((l) => l.itchIntensity).reduce((a, b) => a + b) /
+              firstHalf.length;
 
-      final secondHalfAvg = secondHalf
-              .map((l) => l.itchIntensity)
-              .reduce((a, b) => a + b) /
-          secondHalf.length;
+      final secondHalfAvg =
+          secondHalf.map((l) => l.itchIntensity).reduce((a, b) => a + b) /
+              secondHalf.length;
 
       final difference = (secondHalfAvg - firstHalfAvg).abs();
 
@@ -363,7 +381,8 @@ class InsightEngine {
 
     if (logs.isEmpty) return detectedFlags;
 
-    final lastLog = logs.last;
+    final sorted = _sortedByDateAscending(logs);
+    final lastLog = sorted.last;
 
     // Check against disorder's red flags
     for (final registryFlag in disorder.redFlags) {
@@ -372,13 +391,13 @@ class InsightEngine {
 
       // Emergency: extreme itch + sleep disruption
       if (registryFlag.urgency == 'emergency') {
-        matches = lastLog.itchIntensity >= 9 && 
-                  (lastLog.sleepDisruption || lastLog.mood <= 1);
+        matches = lastLog.itchIntensity >= 9 &&
+            (lastLog.sleepDisruption || lastLog.mood <= 1);
       }
       // Urgent: high itch + sleep disruption
       else if (registryFlag.urgency == 'urgent') {
-        matches = lastLog.itchIntensity >= 8 && 
-                  (lastLog.sleepDisruption || lastLog.mood <= 2);
+        matches = lastLog.itchIntensity >= 8 &&
+            (lastLog.sleepDisruption || lastLog.mood <= 2);
       }
       // Soon: moderate itch + some concern
       else if (registryFlag.urgency == 'soon') {
@@ -408,32 +427,31 @@ class InsightEngine {
       );
     }
 
+    final sorted = _sortedByDateAscending(logs);
+
     // Base risk from recent itch levels
-    final recentLogs = logs.length > 7 ? logs.sublist(logs.length - 7) : logs;
-    final recentAvgItch = recentLogs
-            .map((l) => l.itchIntensity)
-            .reduce((a, b) => a + b) /
-        recentLogs.length;
+    final recentLogs =
+        sorted.length > 7 ? sorted.sublist(sorted.length - 7) : sorted;
+    final recentAvgItch =
+        recentLogs.map((l) => l.itchIntensity).reduce((a, b) => a + b) /
+            recentLogs.length;
 
     var baseRisk = (recentAvgItch / 10.0) * 100.0;
 
     // Adjust based on current state
-    final lastLog = logs.last;
+    final lastLog = sorted.last;
     if (lastLog.stressLevel >= 7) baseRisk += 15.0;
     if (lastLog.sleepQuality <= 2) baseRisk += 15.0;
     if (lastLog.sleepDisruption) baseRisk += 10.0;
     if (lastLog.mood <= 2) baseRisk += 10.0;
 
     // Get top 3 triggers by confidence
-    final topTriggers = detectedTriggers
-        .take(3)
-        .map((t) => t.name)
-        .toList();
+    final topTriggers = detectedTriggers.take(3).map((t) => t.name).toList();
 
     // Determine confidence level
     String confidenceLevel = 'Medium';
-    if (logs.length >= 21) confidenceLevel = 'High';
-    if (logs.length < 10) confidenceLevel = 'Low';
+    if (sorted.length >= 21) confidenceLevel = 'High';
+    if (sorted.length < 10) confidenceLevel = 'Low';
 
     return FlareRiskPrediction(
       riskPercentage: min(100.0, baseRisk),
@@ -458,12 +476,14 @@ class InsightEngine {
     final disclaimer =
         'WARNING: These insights are based on statistical analysis of YOUR data only. They are NOT medical diagnoses or treatment recommendations. Always consult a dermatologist before making changes.';
 
+    final sorted = _sortedByDateAscending(logs);
+
     // Run all analyses
-    final triggers = identifyTriggers(logs, condition, disorder);
-    final patterns = detectPatterns(logs);
-    final streaks = calculateStreaks(logs);
-    final redFlags = detectRedFlags(logs, disorder);
-    final flareRisk = predictFlareRisk(logs, triggers);
+    final triggers = identifyTriggers(sorted, condition, disorder);
+    final patterns = detectPatterns(sorted);
+    final streaks = calculateStreaks(sorted);
+    final redFlags = detectRedFlags(sorted, disorder);
+    final flareRisk = predictFlareRisk(sorted, triggers);
 
     // WEARABLE ADDITION: compute wearable snapshot and pass modifier to risk calc
     WearableSnapshot? wearableSnapshot;
@@ -479,8 +499,8 @@ class InsightEngine {
 
     // Calculate overall health score (0-100)
     int healthScore = 100;
-    if (logs.isNotEmpty) {
-      final lastLog = logs.last;
+    if (sorted.isNotEmpty) {
+      final lastLog = sorted.last;
       healthScore -= (lastLog.itchIntensity * 5); // Itch is major factor
       healthScore -= ((5 - lastLog.mood) * 8); // Mood matters
       healthScore -= ((5 - lastLog.sleepQuality) * 4); // Sleep matters
@@ -488,7 +508,7 @@ class InsightEngine {
       healthScore = healthScore.clamp(0, 100);
     }
 
-    final density = LogDensityConfidence.forLast7Days(logs);
+    final density = LogDensityConfidence.forLast7Days(sorted);
 
     // Build comprehensive summary
     return DailyInsightSummary(
@@ -501,9 +521,12 @@ class InsightEngine {
       streakInfo: streaks,
       redFlags: redFlags,
       flareRiskPrediction: flareRisk,
-      dataPoints: logs.length,
-      analysisConfidence: logs.length >= 21 ? 'High' :
-                          logs.length >= 14 ? 'Moderate' : 'Low',
+      dataPoints: sorted.length,
+      analysisConfidence: sorted.length >= 21
+          ? 'High'
+          : sorted.length >= 14
+              ? 'Moderate'
+              : 'Low',
       loggedDaysLast7: density.loggedDays,
       logWindowDays: density.windowDays,
       logDensityLabel: density.label,
@@ -515,11 +538,160 @@ class InsightEngine {
   // HELPER METHODS
   // ═══════════════════════════════════════════════════════════════════════
 
+  /// Oldest-first copy. Callers (UI lists, DailyLogService) often pass
+  /// newest-first; windowing and `.last` are only valid after this sort.
+  static List<DailyLog> _sortedByDateAscending(List<DailyLog> logs) {
+    return List<DailyLog>.from(logs)..sort((a, b) => a.date.compareTo(b.date));
+  }
+
   /// Convert day number (1-7, Monday=1) to readable day name
   static String _getDayName(int dayOfWeek) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday'
+    ];
     return days[(dayOfWeek - 1) % 7];
   }
+
+  /// Two-tailed standard-normal quantile Φ^{-1}(1 − 0.05/(2K)).
+  /// Values from common z-tables (NIST / most intro stats texts).
+  static double _bonferroniZCrit(int lagCount) {
+    const table = <int, double>{
+      1: 1.960,
+      2: 2.241,
+      3: 2.394,
+      4: 2.498,
+      5: 2.576,
+      6: 2.638,
+      7: 2.690,
+      8: 2.734,
+    };
+    if (lagCount <= 1) return table[1]!;
+    if (lagCount >= 8) return table[8]!;
+    return table[lagCount]!;
+  }
+
+  static double _tanh(double x) {
+    final e2x = exp(2 * x);
+    return (e2x - 1) / (e2x + 1);
+  }
+
+  /// Map a registry trigger name to a daily series aligned with [logs], or
+  /// null if there is no meaningful DailyLog signal (caller must skip).
+  static List<num>? metricSeriesForTrigger(
+      String triggerName, List<DailyLog> logs) {
+    return metricMappingForTrigger(triggerName, logs)?.series;
+  }
+
+  /// Same mapping as [metricSeriesForTrigger], plus an optional [coverageNote]
+  /// when a future mapping covers only part of the registry display name.
+  /// Currently populated mappings (stress, sleep, mood, alcohol, smoking) are
+  /// full coverage, so [TriggerMetricMapping.coverageNote] is left null.
+  static TriggerMetricMapping? metricMappingForTrigger(
+    String triggerName,
+    List<DailyLog> logs,
+  ) {
+    final name = triggerName.toLowerCase();
+
+    final isStress = name.contains('stress') || name.contains('psychological');
+    final isSleep = name.contains('sleep') || name.contains('deprivation');
+
+    // Eczema: 'Stress & Sleep Deprivation' — both are daily 1–N scales.
+    if (isStress && isSleep) {
+      return TriggerMetricMapping([
+        for (final l in logs)
+          ((l.stressLevel / 10.0) + ((5 - l.sleepQuality) / 4.0)) / 2.0,
+      ]);
+    }
+
+    // Psoriasis: 'Psychological Stress'
+    if (isStress) {
+      return TriggerMetricMapping(
+        [for (final l in logs) l.stressLevel.toDouble()],
+      );
+    }
+
+    if (isSleep) {
+      return TriggerMetricMapping(
+        [for (final l in logs) (5 - l.sleepQuality).toDouble()],
+      );
+    }
+
+    if (name.contains('mood') || name.contains('depression')) {
+      return TriggerMetricMapping(
+        [for (final l in logs) (5 - l.mood).toDouble()],
+      );
+    }
+
+    // Psoriasis 'Alcohol Consumption' — patients can tag diet.alcohol.
+    if (name.contains('alcohol')) {
+      return TriggerMetricMapping([
+        for (final l in logs)
+          _logHasCanonicalTrigger(l, 'diet', 'alcohol') ? 1.0 : 0.0,
+      ]);
+    }
+
+    // Psoriasis 'Smoking' — no taxonomy id; presence from tagged trigger text.
+    if (name.contains('smoking') ||
+        name.contains('cigarette') ||
+        name.contains('tobacco')) {
+      return TriggerMetricMapping(
+        [for (final l in logs) _logHasSmokingTag(l) ? 1.0 : 0.0],
+      );
+    }
+
+    // Remaining names have no complete daily-varying DailyLog signal:
+    // - Cold Weather & Low Humidity / Temperature Drops: no thermometer;
+    //   self-tagged environment.cold would overclaim the registry name
+    // - Food Allergen Exposure (Milk, Nuts, Eggs): taxonomy has dairy only
+    // - Environmental Allergens (Dust Mites, Pollen, Pet Dander): pollen only
+    // - Bacterial Infection (Streptococcal / Staph): no infection observation
+    // - Skin Trauma (Koebner): affectedAreas is lesion location, not trauma
+    // - Obesity (BMI >30): not a daily-varying metric
+    // - Medications (Beta-blockers, NSAIDs, Lithium): treatment notes are
+    //   skin-therapy adherence, not trigger-drug exposure
+    // - High Humidity + Sweating: no humidity/sweat field (heat ≠ humidity)
+    // - Harsh Soaps, Detergents, Fragrances: no product/irritant field
+    // - Dry Air & Low Humidity: no humidity field
+    // - Itch-Scratch Cycle: tautological with itchIntensity (the outcome)
+    return null;
+  }
+
+  static bool _logHasCanonicalTrigger(
+    DailyLog log,
+    String topLevel,
+    String subLevel,
+  ) {
+    final full = '$topLevel.$subLevel';
+    final structured = log.structuredTriggerIds ?? const [];
+    if (structured.contains(full)) return true;
+    return normalizeTriggers(log.triggers).any(
+      (n) => n.id.topLevel == topLevel && n.id.subLevel == subLevel,
+    );
+  }
+
+  static bool _logHasSmokingTag(DailyLog log) {
+    const keywords = ['smoking', 'cigarette', 'tobacco'];
+    for (final raw in [...?log.structuredTriggerIds, ...?log.triggers]) {
+      final t = raw.toLowerCase();
+      if (keywords.any(t.contains)) return true;
+    }
+    return false;
+  }
+}
+
+/// Daily series used to correlate a registry trigger, plus an optional
+/// coverage caveat when the series is narrower than the trigger's display name.
+class TriggerMetricMapping {
+  final List<num> series;
+  final String? coverageNote;
+
+  const TriggerMetricMapping(this.series, {this.coverageNote});
 }
 
 /// Correlate normalized trigger categories with validated PRO scores (POEM/DLQI).
@@ -556,8 +728,7 @@ class TriggerProCorrelationEngine {
       final mapForWeek =
           weekToCategoryDays.putIfAbsent(week, () => <String, Set<String>>{});
       for (final cat in topLevels) {
-        final setForCat =
-            mapForWeek.putIfAbsent(cat, () => <String>{});
+        final setForCat = mapForWeek.putIfAbsent(cat, () => <String>{});
         setForCat.add(dayKey);
       }
     }
@@ -577,8 +748,7 @@ class TriggerProCorrelationEngine {
     if (weekToPro.isEmpty) return const [];
 
     // 3. For weeks that have both triggers and PRO, build vectors
-    final weeks = weekToPro.keys.toList()
-      ..sort((a, b) => a.compareTo(b));
+    final weeks = weekToPro.keys.toList()..sort((a, b) => a.compareTo(b));
     if (weeks.length < 4) return const []; // too little data
 
     // Collect all categories
@@ -597,8 +767,7 @@ class TriggerProCorrelationEngine {
         final pro = weekToPro[week];
         if (pro == null) continue;
 
-        final catDays =
-            weekToCategoryDays[week]?[cat]?.length ?? 0;
+        final catDays = weekToCategoryDays[week]?[cat]?.length ?? 0;
         // Only use weeks where we have at least one log (even if trigger not present)
         final anyLogsInWeek = weekToCategoryDays.containsKey(week);
         if (!anyLogsInWeek) continue;
@@ -766,7 +935,6 @@ class TriggerProCorrelationEngine {
   }
 }
 
-
 /// ═══════════════════════════════════════════════════════════════════════
 /// DATA MODELS - Core insight output structures
 /// ═══════════════════════════════════════════════════════════════════════
@@ -788,7 +956,8 @@ class PatternInsight {
   });
 
   @override
-  String toString() => '$pattern (confidence: ${(confidence * 100).toStringAsFixed(0)}%)';
+  String toString() =>
+      '$pattern (confidence: ${(confidence * 100).toStringAsFixed(0)}%)';
 }
 
 /// Streak information for motivation tracking
@@ -841,7 +1010,8 @@ class FlareRiskPrediction {
   }
 
   @override
-  String toString() => '${riskPercentage.toStringAsFixed(0)}% risk ($confidenceLevel confidence)';
+  String toString() =>
+      '${riskPercentage.toStringAsFixed(0)}% risk ($confidenceLevel confidence)';
 }
 
 /// Wearable snapshot for today (HRV, sleep, steps, risk modifier).
@@ -873,6 +1043,7 @@ class DailyInsightSummary {
   final int dataPoints; // Number of logs analyzed
   final String analysisConfidence; // Low, Moderate, High
   final WearableSnapshot? wearableSnapshot;
+
   /// Distinct log days in the last 7-day window, for confidence indicators.
   final int loggedDaysLast7;
   final int logWindowDays;
@@ -905,11 +1076,10 @@ class DailyInsightSummary {
 
   /// Quick summary for UI display
   String getSummary() {
-    final triggerSummary =
-        detectedTriggers.isEmpty ? 'No clear triggers detected' : 
-        'Top trigger: ${detectedTriggers.first.name} (${detectedTriggers.first.confidence.toStringAsFixed(0)}% confidence)';
-    final densityPart =
-        '$loggedDaysLast7/$logWindowDays days logged this week';
+    final triggerSummary = detectedTriggers.isEmpty
+        ? 'No clear triggers detected'
+        : 'Top trigger: ${detectedTriggers.first.name} (${detectedTriggers.first.confidence.toStringAsFixed(0)}% confidence)';
+    final densityPart = '$loggedDaysLast7/$logWindowDays days logged this week';
 
     return '$healthLabel | Health: $healthScore/100\n'
         '$triggerSummary\n'
@@ -918,5 +1088,6 @@ class DailyInsightSummary {
   }
 
   @override
-  String toString() => 'InsightSummary($condition, $healthLabel, ${redFlags.length} red flags)';
+  String toString() =>
+      'InsightSummary($condition, $healthLabel, ${redFlags.length} red flags)';
 }

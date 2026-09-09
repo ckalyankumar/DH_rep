@@ -25,7 +25,8 @@ class PersonalWeightCalculator {
   }) {
     if (logs.length < _minDataDays) return null;
 
-    final sorted = List<DailyLog>.from(logs)..sort((a, b) => a.date.compareTo(b.date));
+    final sorted = List<DailyLog>.from(logs)
+      ..sort((a, b) => a.date.compareTo(b.date));
     final window = sorted.length > _maxDataDays
         ? sorted.sublist(sorted.length - _maxDataDays)
         : sorted;
@@ -132,9 +133,12 @@ class PersonalWeightCalculator {
           final personalMood4 = (absMood / totalWithHrv) * targetSum;
           final personalSleep4 = (absSleep / totalWithHrv) * targetSum;
           hrvWeight = blendFactor * personalHrv;
-          stressWeight = blendFactor * personalStress4 + (1 - blendFactor) * disorderDefaults.stressWeight;
-          moodWeight = blendFactor * personalMood4 + (1 - blendFactor) * disorderDefaults.moodWeight;
-          sleepWeight = blendFactor * personalSleep4 + (1 - blendFactor) * disorderDefaults.sleepWeight;
+          stressWeight = blendFactor * personalStress4 +
+              (1 - blendFactor) * disorderDefaults.stressWeight;
+          moodWeight = blendFactor * personalMood4 +
+              (1 - blendFactor) * disorderDefaults.moodWeight;
+          sleepWeight = blendFactor * personalSleep4 +
+              (1 - blendFactor) * disorderDefaults.sleepWeight;
         }
       }
 
@@ -148,7 +152,8 @@ class PersonalWeightCalculator {
           final ix = valid.map((i) => itchSeries[i]).toList();
           final sleepCorr = InsightEngine.calculateSpearman(sx, ix);
           if (sleepCorr.abs() > 0.45) {
-            sleepWeight = (sleepWeight + 0.2).clamp(0, disorderDefaults.sleepWeight + 2);
+            sleepWeight =
+                (sleepWeight + 0.2).clamp(0, disorderDefaults.sleepWeight + 2);
           }
         }
       }
@@ -181,9 +186,15 @@ class PersonalWeightCalculator {
     return s;
   }
 
-  /// Returns the correlation (possibly at best lag) with highest absolute value.
+  /// Returns the correlation (possibly at best lag) with highest absolute value
+  /// among lags that survive Bonferroni and the minimum-n filter. Returns 0
+  /// if no lag is eligible — avoids the winner's curse of picking the max of
+  /// 8 uncorrected tests.
   static double _bestLagCorrelation(List<double> cause, List<double> effect) {
-    if (cause.length != effect.length || cause.length < 3) return 0.0;
+    if (cause.length != effect.length ||
+        cause.length < InsightEngine.minPointsForLagCorrelation) {
+      return 0.0;
+    }
 
     final lagResults = InsightEngine.calculateLagCorrelation(
       cause,
@@ -191,12 +202,11 @@ class PersonalWeightCalculator {
       maxLag: _maxLagDays,
     );
 
-    double best = 0.0;
-    lagResults.forEach((_, corr) {
-      if (corr.abs() > best.abs()) best = corr;
-    });
-
-    return best;
+    final best = InsightEngine.bestSignificantLag(
+      lagResults,
+      seriesLength: cause.length,
+    );
+    return best?.r ?? 0.0;
   }
 
   // WEARABLE ADDITION
@@ -228,8 +238,8 @@ class PersonalWeightCalculator {
   // ignore: unused_element
   static double _dataPointWeight(DailyLog log) {
     final hasPrefill = log.hasWearablePrefill;
-    final notOverridden = !log.sleepQualityWasOverridden &&
-        !log.sleepDisruptionWasOverridden;
+    final notOverridden =
+        !log.sleepQualityWasOverridden && !log.sleepDisruptionWasOverridden;
     return (hasPrefill && notOverridden) ? 1.2 : 1.0;
   }
 }

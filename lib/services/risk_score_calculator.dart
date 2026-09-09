@@ -71,18 +71,20 @@ class RiskScoreCalculator {
     final explanation = <String>[];
 
     // 1. Base components from most recent log
-    DailyLog? latestLog;
-    if (logs.isNotEmpty) {
-      final sorted = List<DailyLog>.from(logs)..sort((a, b) => a.date.compareTo(b.date));
-      latestLog = sorted.last;
-    }
+    final sorted = List<DailyLog>.from(logs)
+      ..sort((a, b) => a.date.compareTo(b.date));
+    final DailyLog? latestLog = sorted.isEmpty ? null : sorted.last;
 
     final components = <String, double>{};
     if (latestLog != null) {
-      components['itch'] = _itchComponent(latestLog.itchIntensity, weights.itchWeight);
-      components['lesion'] = _lesionComponent(latestLog.lesionSeverity, weights.lesionWeight);
-      components['extent'] = _extentComponent(latestLog.affectedAreas.length, weights.extentWeight);
-      components['stress'] = _stressComponent(latestLog.stressLevel, weights.stressWeight);
+      components['itch'] =
+          _itchComponent(latestLog.itchIntensity, weights.itchWeight);
+      components['lesion'] =
+          _lesionComponent(latestLog.lesionSeverity, weights.lesionWeight);
+      components['extent'] = _extentComponent(
+          latestLog.affectedAreas.length, weights.extentWeight);
+      components['stress'] =
+          _stressComponent(latestLog.stressLevel, weights.stressWeight);
       components['mood'] = _moodComponent(latestLog.mood, weights.moodWeight);
       components['sleep'] = _sleepComponent(
         latestLog.sleepQuality,
@@ -104,17 +106,16 @@ class RiskScoreCalculator {
 
     // 2. Short-term trend: worsening in last 3–7 days adds modifier
     double trendMod = 0;
-    if (logs.length >= 7) {
-      final sorted = List<DailyLog>.from(logs)..sort((a, b) => a.date.compareTo(b.date));
+    if (sorted.length >= 7) {
       final last3 = sorted.sublist(sorted.length - 3);
       final prior4 = sorted.sublist(sorted.length - 7, sorted.length - 3);
       final last3Avg = _trendMetric(last3);
       final prior4Avg = _trendMetric(prior4);
       if (last3Avg > prior4Avg + 1.5) {
         trendMod = ((last3Avg - prior4Avg) * 3).clamp(0, trendModifierMax);
-        explanation.add('Recent worsening trend adds +${trendMod.toStringAsFixed(0)}');
+        explanation
+            .add('Recent worsening trend adds +${trendMod.toStringAsFixed(0)}');
       }
-
     }
 
     baseScore += trendMod;
@@ -143,7 +144,8 @@ class RiskScoreCalculator {
       }
       triggerMod = triggerMod.clamp(0, triggerModifierMax);
       if (triggerMod > 0) {
-        explanation.add('Elevated trigger factors add +${triggerMod.toStringAsFixed(0)}');
+        explanation.add(
+            'Elevated trigger factors add +${triggerMod.toStringAsFixed(0)}');
       }
     }
 
@@ -160,8 +162,8 @@ class RiskScoreCalculator {
     baseScore += wearableMod;
 
     // 4. Red-flag override
-    final redFlags = logs.isNotEmpty
-        ? InsightEngine.detectRedFlags(logs, disorder)
+    final redFlags = sorted.isNotEmpty
+        ? InsightEngine.detectRedFlags(sorted, disorder)
         : <RedFlag>[];
     final hasRedFlag = redFlags.isNotEmpty;
 

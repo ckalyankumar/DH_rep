@@ -94,6 +94,11 @@ class EvidencedTrigger {
   final double correlation;
   final double confidence;
 
+  /// Set when the correlation used a narrower signal than [name] implies
+  /// (e.g. dairy tags only for a "milk, nuts, eggs" trigger). Null when the
+  /// mapped DailyLog field fully covers the registry name.
+  final String? coverageNote;
+
   EvidencedTrigger({
     required this.name,
     required this.mechanism,
@@ -106,6 +111,7 @@ class EvidencedTrigger {
     this.lagDays = 0,
     this.correlation = 0.0,
     this.confidence = 0.0,
+    this.coverageNote,
   });
 
   /// Get confidence level as text

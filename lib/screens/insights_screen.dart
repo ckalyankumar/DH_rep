@@ -330,6 +330,20 @@ class _InsightsScreenState extends State<InsightsScreen> {
                 'Top triggers: ${risk.topTriggers.join(", ")}',
                 style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
+              ..._coverageNotesForNames(risk.topTriggers).map(
+                (note) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    note,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.brown[800],
+                    ),
+                  ),
+                ),
+              ),
             ],
             const SizedBox(height: 4),
             Text(
@@ -436,6 +450,18 @@ class _InsightsScreenState extends State<InsightsScreen> {
                     '${trigger.confidence.toStringAsFixed(0)}% confidence',
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
+                  if (trigger.coverageNote != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      trigger.coverageNote!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.brown[800],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -633,6 +659,18 @@ class _InsightsScreenState extends State<InsightsScreen> {
   // ═══════════════════════════════════════════════════════════════════════
   // HELPER WIDGETS
   // ═══════════════════════════════════════════════════════════════════════
+
+  /// Coverage caveats for named triggers, looked up from detected results.
+  /// Used on the always-visible flare-risk "Top triggers" line.
+  List<String> _coverageNotesForNames(List<String> names) {
+    final byName = {
+      for (final t in _insights!.detectedTriggers) t.name: t.coverageNote,
+    };
+    return [
+      for (final name in names)
+        if (byName[name] != null) '$name: ${byName[name]}',
+    ];
+  }
 
   Widget _buildSectionHeader(String title) {
     return Padding(
