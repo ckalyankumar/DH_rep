@@ -1,3 +1,4 @@
+// KNOWN ISSUE: citation identifiers and several keyFinding statistics in this file have not been independently verified and may be inaccurate. See /docs/CITATION_AUDIT.md before treating any evidence entry here as clinically validated. Do not cite this data externally until resolved.
 import 'package:dhealth/models/clinical_evidence_models.dart';
 
 /// Psoriasis clinical database - fully evidence-backed (L40 per WHO ICD-10)
