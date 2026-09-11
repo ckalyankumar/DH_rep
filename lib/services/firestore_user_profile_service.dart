@@ -1,13 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:dhealth/clinical_review/clinical_roles.dart';
 import 'package:intl/intl.dart';
 /// Saves user profile to Firestore at users/{uid}/profile.
 abstract class FirestoreUserProfileService {
   /// Updates role at users/{uid} (profile.role field). Merges with existing data.
-  /// Expected values: 'patient' | 'doctor'.
+  /// Expected client values: 'patient' | 'doctor'. Protected clinical roles
+  /// cannot be granted or overwritten from the app.
   static Future<void> saveRole(String uid, String role) async {
-    final normalized = role.trim().toLowerCase();
-    if (normalized != 'doctor' && normalized != 'patient') return;
+    final normalized = ClinicalRoles.canonicalize(role);
+    if (normalized == null || !ClinicalRoles.clientAssignable.contains(normalized)) {
+      return;
+    }
     try {
+      final existing = await getRole(uid);
+      if (ClinicalRoles.isProtected(existing)) return;
       await FirebaseFirestore.instance.collection('users').doc(uid).set(
         {
           'profile': {'role': normalized},
@@ -92,21 +98,14 @@ abstract class FirestoreUserProfileService {
     }
   }
 
-  /// Returns normalized role from users/{uid}/profile.role.
+  /// Returns canonical role from users/{uid}/profile.role.
   /// Defaults to 'patient' when missing/invalid/error.
   static Future<String> getRole(String uid) async {
     try {
       final profile = await getProfile(uid);
-      final raw = profile?['role'];
-      if (raw is String) {
-        final role = raw.trim().toLowerCase();
-        if (role == 'doctor' || role == 'patient') {
-          return role;
-        }
-      }
-      return 'patient';
+      return ClinicalRoles.canonicalize(profile?['role']) ?? ClinicalRoles.patient;
     } catch (_) {
-      return 'patient';
+      return ClinicalRoles.patient;
     }
   }
 }

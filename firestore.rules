@@ -1,10 +1,13 @@
 // DHealth Firestore Security Rules
-// Last updated: 2026-09-08
+// Last updated: 2026-09-10
 // Pilot version — reviewed before scaling beyond 50 patients
 // Sprint update: added medicationProfile, weeklyFocus,
 //   proAlertDismissals; fixed doctor read on user document;
 //   removed dead routineCompletions rule; tightened
 //   _health_check and sharedWithDoctors status validation.
+// Clinical evidence review: clinicalEvidenceReviews +
+//   clinicalEvidenceEmergencyActions; profile.role lock so clients
+//   cannot self-grant clinicalReviewer / clinicalAdmin.
 
 rules_version = '2';
 service cloud.firestore {
@@ -36,6 +39,128 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(patientUid)/sharedWithDoctors/$(sanitizedDoctorEmail())).data.status == 'active';
     }
 
+    function signedInRole() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('profile', {}).get('role', 'patient')
+        : 'patient';
+    }
+
+    function isClinicalStaff() {
+      return isSignedIn() && signedInRole() in ['clinicalReviewer', 'clinicalAdmin'];
+    }
+
+    function isClinicalAdmin() {
+      return isSignedIn() && signedInRole() == 'clinicalAdmin';
+    }
+
+    function isClientRole(role) {
+      return role in ['patient', 'doctor'];
+    }
+
+    function incomingProfileRole() {
+      return request.resource.data.get('profile', {}).get('role', 'patient');
+    }
+
+    function storedProfileRole() {
+      return resource.data.get('profile', {}).get('role', 'patient');
+    }
+
+    function roleUpdateAllowed() {
+      return incomingProfileRole() == storedProfileRole()
+        || (isClientRole(incomingProfileRole()) && isClientRole(storedProfileRole()));
+    }
+
+    function isValidEntryRef(ref) {
+      return ref is map
+        && ref.condition is string && ref.condition.size() > 0
+        && ref.location is string && ref.location.size() > 0;
+    }
+
+    function isValidProposedContent(content) {
+      return content is map
+        && content.title is string
+        && content.authors is string
+        && content.doi is string
+        && content.keyFinding is string;
+    }
+
+    function reviewCreateValid() {
+      return request.resource.data.status == 'pending'
+        && isValidEntryRef(request.resource.data.entryRef)
+        && isValidProposedContent(request.resource.data.proposedContent)
+        && request.resource.data.submittedBy is string
+        && request.resource.data.submittedBy.size() > 0
+        && request.resource.data.submittedAt == request.time
+        && (!('reviewedBy' in request.resource.data)
+          || request.resource.data.reviewedBy == null)
+        && (!('reviewedAt' in request.resource.data)
+          || request.resource.data.reviewedAt == null)
+        && (!('gradeLevel' in request.resource.data)
+          || request.resource.data.gradeLevel == null);
+    }
+
+    function reviewImmutableFieldsUnchanged() {
+      return request.resource.data.entryRef == resource.data.entryRef
+        && request.resource.data.proposedContent == resource.data.proposedContent
+        && request.resource.data.submittedBy == resource.data.submittedBy
+        && request.resource.data.submittedAt == resource.data.submittedAt
+        && (
+          (!('previousContent' in resource.data)
+            && !('previousContent' in request.resource.data))
+          || request.resource.data.previousContent == resource.data.previousContent
+        );
+    }
+
+    function reviewUpdateValid() {
+      return resource.data.status == 'pending'
+        && request.resource.data.status in ['pending', 'approved', 'rejected', 'needs_changes']
+        && reviewImmutableFieldsUnchanged()
+        && (
+          request.resource.data.status == 'pending'
+          || (
+            request.resource.data.reviewedBy is string
+            && request.resource.data.reviewedBy.size() > 0
+            && request.resource.data.reviewedAt == request.time
+          )
+        )
+        && (
+          request.resource.data.status != 'approved'
+          || (request.resource.data.gradeLevel is string
+            && request.resource.data.gradeLevel.size() > 0)
+        );
+    }
+
+    function emergencyCreateValid() {
+      return request.resource.data.action in ['disable', 'restore']
+        && isValidEntryRef(request.resource.data.entryRef)
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() > 0
+        && request.resource.data.actionBy is string
+        && request.resource.data.actionBy.size() > 0
+        && request.resource.data.actionAt == request.time
+        && request.resource.data.resolveBy is timestamp
+        && (!('resolution' in request.resource.data)
+          || request.resource.data.resolution == null)
+        && (!('resolvedBy' in request.resource.data)
+          || request.resource.data.resolvedBy == null)
+        && (!('resolvedAt' in request.resource.data)
+          || request.resource.data.resolvedAt == null);
+    }
+
+    function emergencyUpdateValid() {
+      return (!('resolution' in resource.data) || resource.data.resolution == null)
+        && request.resource.data.resolution in ['revoked-permanently', 'restored']
+        && request.resource.data.resolvedBy is string
+        && request.resource.data.resolvedBy.size() > 0
+        && request.resource.data.resolvedAt == request.time
+        && request.resource.data.action == resource.data.action
+        && request.resource.data.entryRef == resource.data.entryRef
+        && request.resource.data.reason == resource.data.reason
+        && request.resource.data.actionBy == resource.data.actionBy
+        && request.resource.data.actionAt == resource.data.actionAt
+        && request.resource.data.resolveBy == resource.data.resolveBy;
+    }
+
     // ── HEALTH CHECK (connectivity probe) ────────────────────────────
     match /_health_check/{doc} {
       allow read: if isSignedIn();
@@ -43,9 +168,14 @@ service cloud.firestore {
     }
 
     // ── USER PROFILE ────────────────────────────────────────────────
+    // Clients may only set profile.role to patient|doctor. Protected roles
+    // (clinicalReviewer, clinicalAdmin) are console / Admin SDK only.
     match /users/{uid} {
       allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
-      allow write: if isSignedIn() && isOwner(uid);
+      allow create: if isSignedIn() && isOwner(uid)
+        && isClientRole(incomingProfileRole());
+      allow update: if isSignedIn() && isOwner(uid) && roleUpdateAllowed();
+      allow delete: if false;
     }
 
     // ── PATIENT DATA (subcollections) ───────────────────────────────
@@ -181,7 +311,31 @@ service cloud.firestore {
         allow create, update: if isSignedIn() && isOwner(patientId)
           && request.resource.data.status in ['active', 'revoked', 'pending'];
         allow delete: if isSignedIn() && isOwner(patientId);
-    }    
+    }
+
+    // ── CLINICAL EVIDENCE REVIEW (compliance gate) ──────────────────
+    // Any authenticated user may *submit* a pending review. Only
+    // clinicalReviewer / clinicalAdmin may read the queue or change
+    // status. Nobody can create a document already marked approved, or
+    // set reviewedBy on create. Approved / rejected / needs_changes
+    // records are immutable (audit trail). Deletes are denied.
+    match /clinicalEvidenceReviews/{reviewId} {
+      allow read: if isClinicalStaff();
+      allow create: if isSignedIn() && reviewCreateValid();
+      allow update: if isClinicalStaff() && reviewUpdateValid();
+      allow delete: if false;
+    }
+
+    // Emergency disable / restore of an already-approved live entry.
+    // clinicalAdmin only. Open disables must be resolved (restored or
+    // revoked-permanently) by a human; rules do not auto-revert.
+    match /clinicalEvidenceEmergencyActions/{actionId} {
+      allow read: if isClinicalStaff();
+      allow create: if isClinicalAdmin() && emergencyCreateValid();
+      allow update: if isClinicalAdmin() && emergencyUpdateValid();
+      allow delete: if false;
+    }
+
     // ── DENY ALL ELSE ───────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

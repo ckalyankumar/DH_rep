@@ -29,6 +29,9 @@
 //   that is not a 10.* DOI) fail. Empty DOI is allowed only when a resolving
 //   PMID is present (some older journals have no DOI).
 //
+// Companion: tool/verify_clinical_evidence_reviews.dart checks that every
+// live entry has a matching approved human review in Firestore.
+//
 // DO NOT "FIX" CLINICAL DATA WITH THIS SCRIPT
 //   A failing run against current data is expected until a dermatologist
 //   signs off on identifier and keyFinding changes. See
@@ -38,14 +41,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dhealth/data/disorder_registry.dart';
-import 'package:dhealth/models/clinical_evidence_models.dart';
+import 'package:dhealth/clinical_review/clinical_evidence_catalog.dart';
+import 'package:dhealth/clinical_review/clinical_evidence_catalog_io.dart';
 import 'package:http/http.dart' as http;
-
-const _knownClinicalDataFiles = {
-  'psoriasis_clinical_data.dart',
-  'eczema_clinical_data.dart',
-};
 
 const _placeholderDois = {'xxx', 'tbd', 'todo', 'n/a', 'none'};
 
@@ -55,13 +53,11 @@ void main() async {
   final root = _findRepoRoot();
   Directory.current = root;
 
-  final extraFiles = _unregisteredClinicalDataFiles(root);
-  final strayConstructors = _strayClinicalEvidenceConstructors(root);
+  final extraFiles = ClinicalEvidenceCatalogIo.unregisteredClinicalDataFiles(root);
+  final strayConstructors =
+      ClinicalEvidenceCatalogIo.strayClinicalEvidenceConstructors(root);
 
-  final sites = <_CitationSite>[];
-  for (final disorder in _allDisorders()) {
-    sites.addAll(_sitesFor(disorder));
-  }
+  final sites = ClinicalEvidenceCatalog.allLiveSites();
 
   if (sites.isEmpty) {
     stderr.writeln(
@@ -92,8 +88,8 @@ void main() async {
 
   if (extraFiles.isNotEmpty) {
     failures.add(
-      'FAIL  unregistered clinical-data file(s) — add them to this script '
-      'and DisorderRegistry, then re-run:\n'
+      'FAIL  unregistered clinical-data file(s) — add them to '
+      'ClinicalEvidenceCatalog and DisorderRegistry, then re-run:\n'
       '      ${extraFiles.map((f) => f.path).join('\n      ')}',
     );
   }
@@ -132,78 +128,10 @@ void main() async {
   stdout.writeln('All ${sites.length} identifier(s) resolved.');
 }
 
-List<ClinicalDisorder> _allDisorders() {
-  // Keep in lockstep with DisorderRegistry.getDisorderByIndex keys.
-  const keys = ['psoriasis', 'eczema'];
-  return [for (final key in keys) DisorderRegistry.getDisorder(key)];
-}
-
-List<_CitationSite> _sitesFor(ClinicalDisorder disorder) {
-  final condition = disorder.disorderName;
-  final sites = <_CitationSite>[];
-  for (final trigger in disorder.triggers) {
-    for (final evidence in trigger.evidence) {
-      sites.add(_CitationSite(
-        condition: condition,
-        location: 'Trigger: ${trigger.name}',
-        evidence: evidence,
-      ));
-    }
-  }
-  for (final treatment in disorder.treatments) {
-    for (final evidence in treatment.evidence) {
-      sites.add(_CitationSite(
-        condition: condition,
-        location: 'Treatment: ${treatment.name}',
-        evidence: evidence,
-      ));
-    }
-  }
-  for (final evidence in disorder.keyResearchPapers) {
-    sites.add(_CitationSite(
-      condition: condition,
-      location: 'Key research paper',
-      evidence: evidence,
-    ));
-  }
-  return sites;
-}
-
-List<File> _unregisteredClinicalDataFiles(Directory root) {
-  final dir = Directory('${root.path}/lib/data');
-  if (!dir.existsSync()) return const [];
-  return dir
-      .listSync()
-      .whereType<File>()
-      .where(
-          (f) => f.path.replaceAll('\\', '/').endsWith('_clinical_data.dart'))
-      .where((f) => !_knownClinicalDataFiles.contains(_basename(f.path)))
-      .toList();
-}
-
-List<String> _strayClinicalEvidenceConstructors(Directory root) {
-  final lib = Directory('${root.path}/lib');
-  final ctor = RegExp(r'ClinicalEvidence\s*\(');
-  final hits = <String>[];
-  for (final entity in lib.listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('.dart')) continue;
-    final rel = entity.path
-        .replaceAll('\\', '/')
-        .replaceFirst(RegExp(r'.*/lib/'), 'lib/');
-    if (rel.endsWith('clinical_evidence_models.dart')) continue;
-    if (_knownClinicalDataFiles.any(rel.endsWith)) continue;
-    final text = entity.readAsStringSync();
-    if (ctor.hasMatch(text)) {
-      hits.add(rel);
-    }
-  }
-  return hits;
-}
-
-Future<_CheckResult> _checkIdentifiers(_CitationSite site) async {
+Future<_CheckResult> _checkIdentifiers(LiveClinicalEvidenceSite site) async {
   final doi = site.evidence.doi.trim();
   final pmid = site.evidence.pmid?.trim() ?? '';
-  final header = 'FAIL  ${site.condition} / ${site.location}\n'
+  final header = 'FAIL  ${site.displayRef}\n'
       '      title: ${site.evidence.title}';
 
   final doiPlaceholder = _isPlaceholderDoi(doi);
@@ -397,23 +325,6 @@ Directory _findRepoRoot() {
     }
     dir = parent;
   }
-}
-
-String _basename(String path) {
-  final normalized = path.replaceAll('\\', '/');
-  return normalized.split('/').last;
-}
-
-class _CitationSite {
-  final String condition;
-  final String location;
-  final ClinicalEvidence evidence;
-
-  _CitationSite({
-    required this.condition,
-    required this.location,
-    required this.evidence,
-  });
 }
 
 class _CheckResult {

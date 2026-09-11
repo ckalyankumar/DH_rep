@@ -14,6 +14,7 @@ import 'package:flutter/services.dart'
 
 import 'firebase_options.dart';
 
+import 'package:dhealth/clinical_review/clinical_roles.dart';
 import 'package:dhealth/services/wearable_sync_prefs.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
 import 'package:dhealth/services/firestore_user_profile_service.dart';
@@ -90,7 +91,7 @@ void main() async {
       // used to race with LoginScreen's _persistRoleForCurrentUser(), so a
       // doctor could be routed through onboarding before their role landed.
       final role = await FirestoreUserProfileService.getRole(user.uid);
-      if (role != 'doctor') {
+      if (role != ClinicalRoles.doctor && !ClinicalRoles.isProtected(role)) {
         final condition = await OnboardingPrefs.getCondition();
         await FirestoreUserProfileService.saveCondition(user.uid, condition);
       }

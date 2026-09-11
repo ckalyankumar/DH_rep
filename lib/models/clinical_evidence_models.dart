@@ -72,6 +72,24 @@ class ClinicalEvidence {
   bool get isHighQuality => citationCount > 50 && 
       (evidenceType == 'randomized_trial' || evidenceType == 'meta_analysis');
 
+  /// Firestore `proposedContent` payload for a clinical-evidence review.
+  /// Includes every [ClinicalEvidence] field so a reviewer sees the full entry.
+  Map<String, dynamic> toProposedContent() {
+    return {
+      'title': title,
+      'authors': authors,
+      'year': year,
+      'journal': journal,
+      'doi': doi,
+      'pmid': pmid,
+      'url': url,
+      'keyFinding': keyFinding,
+      'citationCount': citationCount,
+      'evidenceType': evidenceType,
+      'gradeLevel': gradeLevel,
+    };
+  }
+
   @override
   String toString() {
     return '${getCitation()}\nKey Finding: $keyFinding\nCitations: $citationCount';

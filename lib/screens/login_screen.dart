@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'package:dhealth/clinical_review/clinical_roles.dart';
 import 'package:dhealth/services/firestore_user_profile_service.dart';
 /// Web client ID from Google Cloud Console (Firebase Auth > Sign-in method > Google).
 /// Required for Google Sign-In on Android; add it if sign-in fails.
@@ -54,11 +55,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Never downgrade an existing doctor to patient.
+    // Never downgrade an existing doctor or protected clinical role.
     final existingRole = await FirestoreUserProfileService.getRole(user.uid);
-    if (existingRole != 'doctor') {
-      await FirestoreUserProfileService.saveRole(user.uid, 'patient');
+    if (existingRole == ClinicalRoles.doctor ||
+        ClinicalRoles.isProtected(existingRole)) {
+      return;
     }
+    await FirestoreUserProfileService.saveRole(user.uid, 'patient');
   }
 
   /// Re-reads role directly from Firestore (bypassing any cache) and retries
