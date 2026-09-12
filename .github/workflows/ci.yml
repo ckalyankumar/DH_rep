@@ -1,0 +1,213 @@
+# CI for dHealth.
+#
+# Four independent jobs. Any failure fails the workflow. Jobs are split so a
+# known-red clinical-evidence gate cannot be mistaken for an analyzer or test
+# failure.
+#
+#   analyze                          flutter analyze
+#   test                             flutter test (full suite)
+#   verify-citation-identifiers      tool/verify_citation_identifiers.dart
+#                                    (Crossref + Europe PMC; outbound network)
+#   verify-clinical-evidence-reviews tool/verify_clinical_evidence_reviews.dart
+#                                    (production Firestore via WIF)
+#
+# The review-compliance job authenticates with Workload Identity Federation
+# (no JSON key). google-github-actions/auth mints an OAuth access token, which
+# is passed as FIRESTORE_ACCESS_TOKEN — the script's first production
+# credential (see tool/verify_clinical_evidence_reviews.dart).
+#
+# Today the compliance job is expected to fail: live psoriasis/eczema rows
+# have no approved reviews. That is the gate working. See
+# docs/CLINICAL_EVIDENCE_REVIEW.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FIREBASE_PROJECT_ID: dhealth-fb17e
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Provide dummy .env asset
+        run: |
+          # pubspec.yaml lists .env as an asset; the file is gitignored.
+          if [ ! -f .env ]; then
+            printf 'WEATHER_API_KEY=\nPOLLEN_API_KEY=\nAIR_QUALITY_API_KEY=\n' > .env
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Provide dummy .env asset
+        run: |
+          if [ ! -f .env ]; then
+            printf 'WEATHER_API_KEY=\nPOLLEN_API_KEY=\nAIR_QUALITY_API_KEY=\n' > .env
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Test
+        run: flutter test
+
+  verify-citation-identifiers:
+    name: Verify citation identifiers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Provide dummy .env asset
+        run: |
+          if [ ! -f .env ]; then
+            printf 'WEATHER_API_KEY=\nPOLLEN_API_KEY=\nAIR_QUALITY_API_KEY=\n' > .env
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify citation identifiers
+        run: |
+          set +e
+          dart run tool/verify_citation_identifiers.dart
+          status=$?
+          set -e
+          if [ "$status" -eq 1 ]; then
+            echo '::error::Citation identifier check failed: one or more DOIs/PMIDs do not resolve. See the FAIL blocks in this log. This does not judge whether the patient-facing claim is true — that is the clinical review gate.'
+            exit 1
+          fi
+          if [ "$status" -eq 2 ]; then
+            echo '::error::Citation identifier check aborted: Crossref or Europe PMC was unreachable. Retry; this is a network failure, not an identifier failure.'
+            exit 2
+          fi
+          exit "$status"
+
+  verify-clinical-evidence-reviews:
+    name: Verify clinical evidence reviews
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Fork PRs do not receive repository secrets; skip rather than fail as
+    # "could not read Firestore". Same-repo PRs and pushes to main still run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Workload Identity Federation secrets
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] || [ -z "$GCP_SERVICE_ACCOUNT" ]; then
+            echo '::error::Missing GitHub secrets GCP_WORKLOAD_IDENTITY_PROVIDER and/or GCP_SERVICE_ACCOUNT. Create the CI service account and WIF pool first (docs/CLINICAL_EVIDENCE_REVIEW.md). This is an auth-setup failure, not a clinical-content failure.'
+            exit 2
+          fi
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: dhealth-fb17e
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Provide dummy .env asset
+        run: |
+          if [ ! -f .env ]; then
+            printf 'WEATHER_API_KEY=\nPOLLEN_API_KEY=\nAIR_QUALITY_API_KEY=\n' > .env
+          fi
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify clinical evidence reviews
+        env:
+          FIRESTORE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          FIREBASE_PROJECT_ID: dhealth-fb17e
+        run: |
+          set +e
+          dart run tool/verify_clinical_evidence_reviews.dart
+          status=$?
+          set -e
+          if [ "$status" -eq 1 ]; then
+            {
+              echo '## Clinical evidence review compliance failed'
+              echo
+              echo 'Live `ClinicalEvidence` rows in the dart files are not all covered by a matching **approved** Firestore review (or an open emergency disable is unresolved).'
+              echo
+              echo 'Typical first-run reason: `never-reviewed` on every live psoriasis/eczema entry, because the dermatologist review has not landed. That is the gate working, not a broken workflow.'
+              echo
+              echo 'Read the `FAIL` blocks in the step log above (`never-reviewed`, `content-mismatch`, or `disabled-unresolved`). See `docs/CLINICAL_EVIDENCE_REVIEW.md`.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Clinical evidence review compliance failed: live dart entries are unreviewed, mismatch an approval, or are under an open emergency disable. See FAIL blocks in this log (never-reviewed / content-mismatch / disabled-unresolved) and docs/CLINICAL_EVIDENCE_REVIEW.md.'
+            exit 1
+          fi
+          if [ "$status" -eq 2 ]; then
+            {
+              echo '## Could not read Firestore'
+              echo
+              echo 'The enforcement script aborted before judging content (auth or network). Check WIF secrets and that `clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com` has `roles/datastore.viewer` only.'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Clinical evidence review check aborted: could not read production Firestore (auth/network). This is not a content failure — fix credentials. See docs/CLINICAL_EVIDENCE_REVIEW.md.'
+            exit 2
+          fi
+          exit "$status"

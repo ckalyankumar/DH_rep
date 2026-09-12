@@ -12,12 +12,13 @@ prevents the same class of silent fabrication from landing again.
 **Do not edit** `lib/data/psoriasis_clinical_data.dart` or
 `lib/data/eczema_clinical_data.dart` as part of standing up this system.
 
-## Phase 1 status
+## Status
 
-Schema, security rules, and the enforcement script — approved.
-
-Phase 2 (this document, Flutter web portal) is implemented. CI wiring is
-Phase 3.
+| Phase | What | State |
+|---|---|---|
+| 1 | Schema, security rules, enforcement script | Approved |
+| 2 | Flutter web review portal | Implemented |
+| 3 | GitHub Actions CI | Workflow at [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). Requires a one-time GCP + GitHub secrets setup (below) before the Firestore job can authenticate. |
 
 ---
 
@@ -197,6 +198,8 @@ Identifier resolution remains a separate job:
 dart run tool/verify_citation_identifiers.dart
 ```
 
+Both scripts run in CI (Phase 3). They are not part of `flutter test`.
+
 ---
 
 ## Phase 2 — Flutter Web review portal
@@ -231,3 +234,307 @@ only “You don’t have access.”
 5. Emergency (admin only) — open disables with 72h `resolveBy`, restore or
    revoke-permanently; disable an already-approved live dart entry with a
    required reason.
+
+---
+
+## Phase 3 — CI
+
+Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+
+Runs on every **push** and **pull_request** targeting `main`. Four jobs, all
+required for a green workflow (none use `continue-on-error`):
+
+| Job | Command | Needs |
+|---|---|---|
+| Analyze | `flutter analyze` | Flutter |
+| Test | `flutter test` (full suite) | Flutter |
+| Verify citation identifiers | `dart run tool/verify_citation_identifiers.dart` | Outbound HTTPS to Crossref and Europe PMC |
+| Verify clinical evidence reviews | `dart run tool/verify_clinical_evidence_reviews.dart` | Read-only production Firestore (`dhealth-fb17e`) |
+
+Jobs are **separate GitHub checks** on purpose. If the review-compliance job
+is red because entries are still `never-reviewed`, Analyze / Test can still
+show green. Do not collapse them into one step.
+
+The identifier job may also fail on current data: [`CITATION_AUDIT.md`](CITATION_AUDIT.md)
+found fabricated / non-resolving DOIs in the paused psoriasis/eczema files.
+That is the same clinical backlog, not a broken workflow. Do not edit those
+dart files to make CI green.
+
+`pubspec.yaml` lists `.env` as an asset and `.env` is gitignored. CI writes a
+dummy `.env` with empty keys before `flutter pub get` so asset resolution
+succeeds. That file is not committed.
+
+### How the compliance job gets a Firestore token
+
+`tool/verify_clinical_evidence_reviews.dart` credential order:
+
+1. `FIRESTORE_EMULATOR_HOST` — not used in CI (would treat empty collections
+   as every row `never-reviewed`, and would not prove production).
+2. **`FIRESTORE_ACCESS_TOKEN`** — used in CI.
+3. `gcloud auth application-default print-access-token`
+4. `gcloud auth print-access-token`
+
+CI does **not** install `gcloud`. It uses
+[`google-github-actions/auth`](https://github.com/google-github-actions/auth)
+with Workload Identity Federation and `token_format: access_token`. That
+mints a short-lived OAuth token for the CI service account. The workflow
+passes it in as `FIRESTORE_ACCESS_TOKEN`.
+
+This path **bypasses** `firestore.rules` (Google IAM token against the REST
+API), same as a local `gcloud` run. The service account must therefore be
+read-only. It is **not** a clinical reviewer and cannot approve anything.
+
+Fork pull requests do not receive repository secrets; the compliance job is
+skipped on forks. Same-repo PRs and pushes to `main` still run.
+
+### Credential choice: Workload Identity Federation, not a JSON key
+
+A downloaded service-account JSON key is a long-lived secret: anyone who
+copies it can list production Firestore until you rotate it. WIF lets GitHub
+OIDC impersonate the service account for one job; there is no JSON key to
+store. For a single-repo project the extra setup is a handful of `gcloud`
+commands (pool, OIDC provider, IAM binding). That is not substantially harder
+than uploading a key, so this repo uses WIF.
+
+Do **not** generate a key in Firebase Console → Project settings → Service
+accounts. That Firebase Admin SDK key is far more privileged than
+`datastore.viewer`.
+
+### One-time GCP setup (you do this)
+
+Project: `dhealth-fb17e`.
+Service account: `clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com`.
+Role on the project: **only** `roles/datastore.viewer` (Cloud Datastore
+Viewer).
+
+Replace `OWNER/REPO` with this GitHub repository (e.g. `your-user/dhealth`).
+The attribute condition must be this repo, not the whole GitHub org.
+
+#### A. Enable APIs
+
+```
+gcloud config set project dhealth-fb17e
+
+gcloud services enable \
+  iam.googleapis.com \
+  iamcredentials.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  sts.googleapis.com \
+  firestore.googleapis.com
+```
+
+#### B. Create the service account and grant Datastore Viewer
+
+**gcloud:**
+
+```
+gcloud iam service-accounts create clinical-evidence-ci \
+  --project=dhealth-fb17e \
+  --display-name="Clinical evidence CI (read-only Firestore)" \
+  --description="GitHub Actions: list clinicalEvidenceReviews and clinicalEvidenceEmergencyActions. No write."
+
+gcloud projects add-iam-policy-binding dhealth-fb17e \
+  --member="serviceAccount:clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com" \
+  --role="roles/datastore.viewer"
+```
+
+Confirm the SA has no other project roles:
+
+```
+gcloud projects get-iam-policy dhealth-fb17e \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com" \
+  --format="table(bindings.role)"
+```
+
+Expect a single row: `roles/datastore.viewer`.
+
+**Google Cloud Console (same result):**
+
+1. Open [IAM → Service accounts](https://console.cloud.google.com/iam-admin/serviceaccounts?project=dhealth-fb17e)
+   with project `dhealth-fb17e` selected (top bar).
+2. **Create service account**.
+3. Service account name: `clinical-evidence-ci`. The ID should fill in as
+   `clinical-evidence-ci`. Email will be
+   `clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com`.
+4. Description: `GitHub Actions read-only Firestore for the clinical evidence review gate.`
+5. **Create and continue**.
+6. Grant access: role **Cloud Datastore Viewer** (`roles/datastore.viewer`).
+   Do not add Editor, Owner, Firebase Admin, or Cloud Datastore User.
+7. **Continue** → skip "Principals with access" → **Done**.
+8. Do **not** open the account and create a JSON key.
+
+**Firebase Console** cannot create this IAM binding. Use Google Cloud Console
+or `gcloud`. After the SA exists, you can see it under Google Cloud IAM; you
+will not see it as a Firebase Auth user.
+
+#### C. Workload Identity Federation (GitHub OIDC)
+
+```
+# Project number (not the string id) is required in the provider resource name.
+gcloud projects describe dhealth-fb17e --format="value(projectNumber)"
+```
+
+Save that number as `PROJECT_NUMBER`. Then:
+
+```
+gcloud iam workload-identity-pools create github \
+  --project=dhealth-fb17e \
+  --location=global \
+  --display-name="GitHub Actions"
+
+gcloud iam workload-identity-pools providers create-oidc github-actions \
+  --project=dhealth-fb17e \
+  --location=global \
+  --workload-identity-pool=github \
+  --display-name="GitHub Actions OIDC" \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
+  --attribute-condition="assertion.repository == 'OWNER/REPO'"
+```
+
+Allow this repo's GitHub Actions identity to impersonate the service account:
+
+```
+gcloud iam service-accounts add-iam-policy-binding \
+  clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com \
+  --project=dhealth-fb17e \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/OWNER/REPO"
+```
+
+Print the provider resource name (this is the GitHub secret value):
+
+```
+gcloud iam workload-identity-pools providers describe github-actions \
+  --project=dhealth-fb17e \
+  --location=global \
+  --workload-identity-pool=github \
+  --format="value(name)"
+```
+
+It looks like:
+
+```
+projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/github/providers/github-actions
+```
+
+WIF bindings can take a few minutes to propagate. If the first CI run fails
+with `getAccessToken` denied, wait five minutes and re-run.
+
+**Console equivalent for the pool:** IAM & Admin → **Workload Identity
+Federation** → Create pool `github` → Add provider → OpenID Connect → issuer
+`https://token.actions.githubusercontent.com` → map `google.subject` ←
+`assertion.sub`, `attribute.repository` ← `assertion.repository` → attribute
+condition `assertion.repository == 'OWNER/REPO'` → connect service account
+`clinical-evidence-ci` with attribute `repository` = `OWNER/REPO` (this
+grants `roles/iam.workloadIdentityUser`).
+
+### GitHub secrets (you add these)
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → **New
+repository secret**. Two secrets:
+
+| Secret name | Value |
+|---|---|
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Full provider name from the `providers describe` command above |
+| `GCP_SERVICE_ACCOUNT` | `clinical-evidence-ci@dhealth-fb17e.iam.gserviceaccount.com` |
+
+These are identifiers, not private keys, but the workflow reads them as
+secrets. Do not add a `GOOGLE_CREDENTIALS` / JSON key secret.
+
+Do this **before** the first push of the workflow if you can. Missing secrets
+fail the compliance job with a setup error (`exit 2`), which is a different
+failure from `never-reviewed`.
+
+No other secrets are required for these four jobs. Citation-identifier checks
+do not need Crossref credentials. Optional: set `CITATION_CHECK_CONTACT` in
+the identifiers job later (a real email in the User-Agent) if Crossref rate
+limits become an issue.
+
+### How to add a new human reviewer
+
+This is **not** a GCP IAM change and **not** a GitHub secret.
+
+1. The person signs in once through the review portal (same Firebase Auth
+   project as the mobile app) so `users/{uid}` exists.
+2. In **Firebase Console → Firestore → `users` → their Auth UID**, set
+   `profile.role` to `clinicalReviewer` (or `clinicalAdmin` for emergency
+   actions). Use the exact strings; the client cannot write these values.
+3. They can then read the queue and Approve / Reject / Request changes.
+
+Do not grant reviewers `datastore.viewer` on the CI service account, and do
+not put their Google accounts on the CI SA. Reviewer power lives in
+`profile.role`; CI only lists collections.
+
+To let a **different GitHub repository** run this check, add another
+`roles/iam.workloadIdentityUser` binding on the same SA, with that repo in
+the `attribute.repository` member path, and tighten or extend the provider
+attribute condition.
+
+### How to interpret a CI failure
+
+Open the failed job (not just the overall red X). The Dart scripts print
+per-entry `FAIL` blocks to the log; CI does not hide them. GitHub also
+annotates the compliance job and writes a job summary.
+
+| What you see | Meaning | What to do |
+|---|---|---|
+| Job **Analyze** red | `flutter analyze` found issues | Fix Dart analyzer findings. Unrelated to Firestore. |
+| Job **Test** red | `flutter test` failed | Fix the failing test. Offline; uses `fake_cloud_firestore` for matching logic. |
+| **Verify citation identifiers** + `FAIL` on a DOI/PMID | Identifier does not resolve at Crossref / Europe PMC | Do not "fix" by editing clinical dart files until the dermatologist packet says to. See [`CITATION_AUDIT.md`](CITATION_AUDIT.md). |
+| Identifiers job: "registry APIs were unreachable" (`exit 2`) | Network / rate limit | Re-run the job. Not a content failure. |
+| **Verify clinical evidence reviews** + `FAIL  never-reviewed` | Live dart row has no matching **approved** review | Expected until a named reviewer approves that `entryRef` + clinical fields. Submit a pending review in the portal, then approve. |
+| `FAIL  content-mismatch` | An approved review exists but title/authors/doi/pmid/keyFinding/gradeLevel do not match live data | Live file changed without a new approval, or the approval was for different content. File a new review. |
+| `FAIL  disabled-unresolved` | Open emergency `disable` covers this row | Admin must `restored` or `revoked-permanently`; the dart row still fails while it remains in the files. |
+| Compliance job: "could not read Firestore" / missing secrets / HTTP 401/403 (`exit 2`) | Auth setup, not content | Check the two GitHub secrets, WIF binding, `roles/datastore.viewer`, and that APIs are enabled. |
+| Compliance job skipped | Fork PR | Open a same-repo PR, or push to `main`. |
+
+A failing compliance run against current psoriasis/eczema data (29 live
+entries, zero approved reviews) **should fail extensively**. That is the gate
+working. Do not "fix" it by editing `lib/data/psoriasis_clinical_data.dart` or
+`lib/data/eczema_clinical_data.dart`.
+
+### Blocking vs ignored-red
+
+The workflow **fails** when compliance fails. There is no informational mode
+in YAML. Whether that blocks **merge** is a GitHub branch-protection setting
+(required checks), not a workflow flag.
+
+Recommended operating stance:
+
+1. Keep the job failing honestly (no `continue-on-error`). Soft-fail "until
+   the backlog clears" has no natural end and trains the team to ignore the
+   gate.
+2. In branch protection, require **Analyze** and **Test** as soon as they are
+   green. Add **Verify citation identifiers** when that job is green (it may
+   stay red until identifier corrections from the citation audit are
+   approved and applied).
+3. Do **not** mark **Verify clinical evidence reviews** required until it has
+   gone green once (initial dermatologist approvals landed). Until then it
+   still runs on every PR as a visible red check named for the real reason.
+4. The day a clinical job goes green, add it as a required check. One
+   settings change; no YAML change.
+
+If you require the compliance job while it is permanently red, **no** PR can
+merge — including crash fixes that never touch clinical data. Teams then
+bypass *all* required checks, which is worse than a named, non-required red
+job. If you instead `continue-on-error` the job, it will stay optional
+forever.
+
+GitHub admin merge bypass remains available for a true emergency; that is
+logged. Use that, not a silent skip in YAML.
+
+### Local equivalent of the CI compliance job
+
+```
+gcloud auth application-default login
+dart run tool/verify_clinical_evidence_reviews.dart
+```
+
+Or pass a token explicitly:
+
+```
+export FIRESTORE_ACCESS_TOKEN="$(gcloud auth application-default print-access-token)"
+dart run tool/verify_clinical_evidence_reviews.dart
+```

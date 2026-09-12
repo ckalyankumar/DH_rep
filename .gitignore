@@ -45,6 +45,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Generated credentials from google-github-actions/auth (CI)
+gha-creds-*.json
+
 # Local Cursor IDE settings
 .cursor/
 
