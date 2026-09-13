@@ -7,6 +7,7 @@
 ///   - Group 5   (T16–T18): DoctorPortalScreen query logic (FakeFirebaseFirestore).
 ///
 /// Run with: flutter test test/doctor_login_test.dart --reporter expanded
+library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
