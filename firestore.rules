@@ -1,5 +1,5 @@
 // DHealth Firestore Security Rules
-// Last updated: 2026-09-10
+// Last updated: 2026-09-14
 // Pilot version — reviewed before scaling beyond 50 patients
 // Sprint update: added medicationProfile, weeklyFocus,
 //   proAlertDismissals; fixed doctor read on user document;
@@ -8,6 +8,8 @@
 // Clinical evidence review: clinicalEvidenceReviews +
 //   clinicalEvidenceEmergencyActions; profile.role lock so clients
 //   cannot self-grant clinicalReviewer / clinicalAdmin.
+// 2026-09-14: bind submittedBy/reviewedBy to Auth email; reject
+//   self-approval and short reviewNotes on the pending→approved write.
 
 rules_version = '2';
 service cloud.firestore {
@@ -53,6 +55,26 @@ service cloud.firestore {
       return isSignedIn() && signedInRole() == 'clinicalAdmin';
     }
 
+    // Portal actorLabel prefers Firebase Auth email (see PortalIdentity).
+    // Empty when the token has no email — those sessions cannot submit
+    // or decide a review.
+    function signedInEmail() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.size() > 0
+        ? request.auth.token.email
+        : '';
+    }
+
+    // Lockstep with ClinicalReviewSchema.approvalNotesMinLength (12).
+    // Rules have no trim(); require a 12-char span that starts and
+    // ends with a non-whitespace character so padding cannot pass.
+    function reviewNotesMeetApprovalMinimum() {
+      return request.resource.data.reviewNotes is string
+        && request.resource.data.reviewNotes.size() >= 12
+        && request.resource.data.reviewNotes.matches('.*\\S.{10}\\S.*');
+    }
+
     function isClientRole(role) {
       return role in ['patient', 'doctor'];
     }
@@ -88,8 +110,8 @@ service cloud.firestore {
       return request.resource.data.status == 'pending'
         && isValidEntryRef(request.resource.data.entryRef)
         && isValidProposedContent(request.resource.data.proposedContent)
-        && request.resource.data.submittedBy is string
-        && request.resource.data.submittedBy.size() > 0
+        && signedInEmail().size() > 0
+        && request.resource.data.submittedBy == signedInEmail()
         && request.resource.data.submittedAt == request.time
         && (!('reviewedBy' in request.resource.data)
           || request.resource.data.reviewedBy == null)
@@ -118,15 +140,20 @@ service cloud.firestore {
         && (
           request.resource.data.status == 'pending'
           || (
-            request.resource.data.reviewedBy is string
-            && request.resource.data.reviewedBy.size() > 0
+            signedInEmail().size() > 0
+            && request.resource.data.reviewedBy == signedInEmail()
             && request.resource.data.reviewedAt == request.time
           )
         )
         && (
           request.resource.data.status != 'approved'
-          || (request.resource.data.gradeLevel is string
-            && request.resource.data.gradeLevel.size() > 0)
+          || (
+            request.resource.data.gradeLevel is string
+            && request.resource.data.gradeLevel.size() > 0
+            && request.resource.data.reviewedBy.lower()
+              != resource.data.submittedBy.lower()
+            && reviewNotesMeetApprovalMinimum()
+          )
         );
     }
 
@@ -314,11 +341,15 @@ service cloud.firestore {
     }
 
     // ── CLINICAL EVIDENCE REVIEW (compliance gate) ──────────────────
-    // Any authenticated user may *submit* a pending review. Only
-    // clinicalReviewer / clinicalAdmin may read the queue or change
-    // status. Nobody can create a document already marked approved, or
-    // set reviewedBy on create. Approved / rejected / needs_changes
-    // records are immutable (audit trail). Deletes are denied.
+    // Any authenticated user with an Auth email may *submit* a pending
+    // review (submittedBy must equal that email). Only clinicalReviewer
+    // / clinicalAdmin may read the queue or change status. Nobody can
+    // create a document already marked approved, or set reviewedBy on
+    // create. Approve requires reviewedBy == the reviewer's Auth email,
+    // reviewedBy != submittedBy (case-insensitive), GRADE, and
+    // reviewNotes meeting the 12-character minimum. Reject / request
+    // changes still do not require notes. Approved / rejected /
+    // needs_changes records are immutable (audit trail). Deletes denied.
     match /clinicalEvidenceReviews/{reviewId} {
       allow read: if isClinicalStaff();
       allow create: if isSignedIn() && reviewCreateValid();
