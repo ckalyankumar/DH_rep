@@ -82,7 +82,7 @@ class PsoriasisDisorder implements ClinicalDisorder {
           expectedImprovement: 25.0,
           evidence: [
             ClinicalEvidence(
-              title: 'Streptococcal Trigger of Psoriasis',
+              title: 'Streptococcal Trigger of Psoriasis [CI-GATE-PROBE]',
               authors: 'Baker et al.',
               year: '2019',
               journal: 'Clinical Dermatology Reviews',
