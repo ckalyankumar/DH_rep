@@ -121,7 +121,7 @@ void main() {
       expect(find.byType(DropdownButton<String>), findsOneWidget);
     });
 
-    testWidgets('Recommendations tab opens RecommendationsScreen',
+    testWidgets('Recommendations tab shows paused EmptyState by default',
         (tester) async {
       await tester.pumpWidget(_app(const MainScreen()));
       await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
@@ -131,8 +131,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.widgetWithText(AppBar, 'Recommendations'), findsOneWidget);
-      expect(find.text('Self-Care'), findsOneWidget);
-      expect(find.text('Discuss with Doctor'), findsOneWidget);
+      expect(find.text('Recommendations paused'), findsOneWidget);
+      expect(find.text('Self-Care'), findsNothing);
+      expect(find.text('Discuss with Doctor'), findsNothing);
     });
 
     testWidgets('adding a today log then rebuilding updates the risk score',

@@ -24,6 +24,7 @@ import 'package:dhealth/widgets/recent_logs_list.dart';
 import 'package:dhealth/widgets/wearable_dashboard_widget.dart';
 import 'package:dhealth/widgets/clinical_note_widget.dart'
     show ClinicalNoteType, ClinicalNoteWidget, showWhenToSeeDoctorModal;
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:dhealth/widgets/skeleton_widgets.dart';
 import 'package:dhealth/widgets/weekly_focus_card.dart';
 import 'package:dhealth/services/flare_detection_service.dart';
@@ -285,8 +286,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final todayRiskScore = analytics.getTodayRiskScore();
     final logDensity = LogDensityConfidence.forLast7Days(logs);
     final recent30DayLogs = analytics.getLogsFromLastDays(30);
+    final flags = FeatureFlagsScope.of(context);
 
-    // Detect red flags
+    // Detect red flags (always compute; hide below when showRedFlags is false)
     final disorder = DisorderRegistry.getDisorder(selectedCondition);
     final redFlags = logs.isNotEmpty
         ? InsightEngine.detectRedFlags(logs, disorder)
@@ -486,7 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // SECTION 3: RED FLAGS (EMERGENCY ALERTS)
             // ═══════════════════════════════════════════════════════════
 
-            if (redFlags.isNotEmpty) ...[
+            if (flags.showRedFlags && redFlags.isNotEmpty) ...[
               const Text(
                 '🚨 Health Alerts',
                 style: TextStyle(
@@ -563,6 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 final isWide = Responsive.isTablet(context) ||
                     Responsive.isDesktop(context);
                 final riskCard = todayRiskScore > 0
+                    ? (flags.showRiskScore
                     ? Card(
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.lg),
@@ -638,6 +641,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       )
+                        : const SizedBox.shrink())
                     : Card(
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.lg),

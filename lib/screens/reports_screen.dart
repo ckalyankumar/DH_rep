@@ -10,6 +10,8 @@ import 'package:dhealth/services/firestore_reports_service.dart';
 import 'package:dhealth/models/daily_log.dart';
 import 'package:dhealth/models/user_report.dart';
 import 'package:dhealth/screens/share_with_doctor_screen.dart';
+import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 // =============================================================================
 // ReportsScreen — StatefulWidget
@@ -267,13 +269,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
         final trendLogs =
             last7DaysLogs.isNotEmpty ? last7DaysLogs : logs;
         final spots = _trendSpots(trendLogs);
+        final showRiskScore = FeatureFlagsScope.of(context).showRiskScore;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-                  _buildSeverityTrendCard(trendLogs, spots),
+              if (showRiskScore)
+                _buildSeverityTrendCard(trendLogs, spots)
+              else
+                const EmptyStateWidget(
+                  emoji: '📋',
+                  title: 'Risk score paused',
+                  description:
+                      'We\'re completing a clinical safety review before showing personalized risk and severity scores. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
+                ),
               const SizedBox(height: 16),
               _buildRecentEntriesCard(logs),
             ],
@@ -420,36 +431,49 @@ class _ReportsScreenState extends State<ReportsScreen> {
         final avg = _avgSeverity(logs);
         final max = _maxSeverity(logs);
         final min = _minSeverity(logs);
+        final showRiskScore = FeatureFlagsScope.of(context).showRiskScore;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              _buildStatCard(
-                'Average Severity',
-                '${avg.toStringAsFixed(1)}/100',
-                Colors.blue,
-              ),
-              const SizedBox(height: 12),
-              _buildStatCard(
-                'Highest Severity',
-                '$max/100',
-                Colors.red,
-              ),
-              const SizedBox(height: 12),
-              _buildStatCard(
-                'Lowest Severity',
-                '$min/100',
-                Colors.green,
-              ),
-              const SizedBox(height: 12),
+              if (showRiskScore) ...[
+                _buildStatCard(
+                  'Average Severity',
+                  '${avg.toStringAsFixed(1)}/100',
+                  Colors.blue,
+                ),
+                const SizedBox(height: 12),
+                _buildStatCard(
+                  'Highest Severity',
+                  '$max/100',
+                  Colors.red,
+                ),
+                const SizedBox(height: 12),
+                _buildStatCard(
+                  'Lowest Severity',
+                  '$min/100',
+                  Colors.green,
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                const EmptyStateWidget(
+                  emoji: '📋',
+                  title: 'Risk score paused',
+                  description:
+                      'We\'re completing a clinical safety review before showing personalized risk and severity scores. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
+                ),
+                const SizedBox(height: 12),
+              ],
               _buildStatCard(
                 'Total Entries',
                 '${logs.length}',
                 Colors.purple,
               ),
-              const SizedBox(height: 16),
-              _buildDistributionCard(logs),
+              if (showRiskScore) ...[
+                const SizedBox(height: 16),
+                _buildDistributionCard(logs),
+              ],
               if (_effectiveReportsService != null) ...[
                 const SizedBox(height: 16),
                 _buildSavedReportsCard(),
@@ -737,10 +761,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildRecentEntryItem(DailyLog log) {
+    final showRiskScore = FeatureFlagsScope.of(context).showRiskScore;
     final severityColor = _getSeverityColor(log.severityScore);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      child: _RecentEntryRow(log: log, severityColor: severityColor),
+      child: _RecentEntryRow(
+        log: log,
+        severityColor: severityColor,
+        showSeverity: showRiskScore,
+      ),
     );
   }
 
@@ -944,10 +973,12 @@ class _TrendSummaryRow extends StatelessWidget {
 class _RecentEntryRow extends StatelessWidget {
   final DailyLog log;
   final Color severityColor;
+  final bool showSeverity;
 
   const _RecentEntryRow({
     required this.log,
     required this.severityColor,
+    required this.showSeverity,
   });
 
   @override
@@ -974,20 +1005,21 @@ class _RecentEntryRow extends StatelessWidget {
             ),
           ],
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: severityColor.withValues(alpha:0.2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            '${log.severityScore}/100',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: severityColor,
+        if (showSeverity)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: severityColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '${log.severityScore}/100',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: severityColor,
+              ),
             ),
           ),
-        ),
       ],
     );
   }

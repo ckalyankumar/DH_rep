@@ -26,6 +26,7 @@ import 'package:dhealth/widgets/emergency_red_flag_modal.dart';
 import 'package:dhealth/widgets/urgent_red_flag_banner.dart';
 import 'package:dhealth/widgets/weekly_stats_card.dart';
 import 'package:dhealth/widgets/recent_logs_list.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:dhealth/widgets/trigger_insight_card.dart';
 import 'package:dhealth/screens/insights/trigger_correlations_screen.dart';
 import 'package:dhealth/utils/spacing.dart';
@@ -249,9 +250,11 @@ class _MainScreenState extends State<MainScreen> {
     if (logs.isEmpty) return;
     final disorder = DisorderRegistry.getDisorder(selectedCondition);
     final redFlags = InsightEngine.detectRedFlags(logs, disorder);
+    if (!mounted) return;
+    if (!FeatureFlagsScope.of(context).showRedFlags) return;
     final emergencyFlags =
         redFlags.where((f) => f.urgency == 'emergency').toList();
-    if (emergencyFlags.isEmpty || !mounted) return;
+    if (emergencyFlags.isEmpty) return;
     final service =
         FirestoreRedFlagAcknowledgementService(userId: user.uid);
     for (final flag in emergencyFlags) {
@@ -451,7 +454,7 @@ class _MainScreenState extends State<MainScreen> {
             DisorderRegistry.getDisorder(selectedCondition),
           ).where((f) => f.urgency == 'urgent').toList();
 
-    if (urgentFlags.isEmpty) {
+    if (!FeatureFlagsScope.of(context).showRedFlags || urgentFlags.isEmpty) {
       return content;
     }
 
@@ -495,6 +498,7 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
     final todayRiskScore = riskResult.finalScore;
+    final flags = FeatureFlagsScope.of(context);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -552,8 +556,8 @@ class _MainScreenState extends State<MainScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Risk card
-          if (hasTodayLog)
+          // Risk card (hidden when showRiskScore is false; computation above still runs)
+          if (hasTodayLog && flags.showRiskScore)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -628,7 +632,7 @@ class _MainScreenState extends State<MainScreen> {
                 ),
               ),
             )
-          else
+          else if (!hasTodayLog)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -665,7 +669,7 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(height: 16),
 
           // Trigger insight card (only if significant correlation)
-          if (_correlationsFuture != null)
+          if (flags.showTriggerInsights && _correlationsFuture != null)
             FutureBuilder<List<TriggerProCorrelation>?>(
               future: _correlationsFuture,
               builder: (context, snapshot) {
@@ -988,11 +992,14 @@ class _MainScreenState extends State<MainScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => SettingsScreen(
-                      initialCondition: selectedCondition,
-                      onConditionChanged: () {
-                        _loadConditionFromPrefs();
-                      },
+                    builder: (_) => FeatureFlagsScope(
+                      flags: FeatureFlagsScope.of(context),
+                      child: SettingsScreen(
+                        initialCondition: selectedCondition,
+                        onConditionChanged: () {
+                          _loadConditionFromPrefs();
+                        },
+                      ),
                     ),
                   ),
                 );

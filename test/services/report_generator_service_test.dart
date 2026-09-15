@@ -551,4 +551,31 @@ void main() {
     expect(report.bytes.length, greaterThan(0));
     expect(report.pageCount, inInclusiveRange(1, 6));
   });
+
+  test('includeRiskScore false still produces a document', () async {
+    final start = DateTime.now().subtract(const Duration(days: 5));
+    final logs = List.generate(
+      3,
+      (i) => makeLog(
+        date: start.add(Duration(days: i)),
+        itch: 9,
+        mood: 1,
+        sleepDisruption: true,
+        notes: 'Keep this note in the export',
+      ),
+    );
+
+    final report = await _generateWithoutFontWarnings(
+      () => ReportGeneratorService.generateHealthReport(
+        patientName: 'Patient',
+        condition: 'psoriasis',
+        logs: logs,
+        startDate: start,
+        endDate: start.add(const Duration(days: 4)),
+        includeRiskScore: false,
+      ),
+    );
+    expect(report.bytes.length, greaterThan(0));
+    expect(report.pageCount, inInclusiveRange(1, 6));
+  });
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dhealth/models/daily_log.dart';
 import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:intl/intl.dart';
 
 class RecentLogsList extends StatelessWidget {
@@ -52,6 +53,8 @@ class RecentLogsList extends StatelessWidget {
                 final log = logs[index];
                 final riskScore = log.calculateRiskScore();
                 final dateStr = DateFormat('MMM d, yyyy').format(log.date);
+                final showRiskScore =
+                    FeatureFlagsScope.of(context).showRiskScore;
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -88,26 +91,28 @@ class RecentLogsList extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color:
-                                _getRiskColor(riskScore).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Risk: $riskScore',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _getRiskColor(riskScore),
+                        if (showRiskScore) ...[
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _getRiskColor(riskScore)
+                                  .withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Risk: $riskScore',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _getRiskColor(riskScore),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),

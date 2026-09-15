@@ -26,6 +26,7 @@ import 'package:dhealth/utils/abha_id_formatter.dart';
 import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/utils/spacing.dart';
 import 'package:dhealth/utils/file_download_helper.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 const _sectionHeaderStyle = TextStyle(
   fontSize: 11,
@@ -619,6 +620,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         days: 365,
       );
 
+      if (!mounted) return;
+      final includeRiskScore = FeatureFlagsScope.of(context).showRiskScore;
+
       final doc = await ReportGeneratorService.generateHealthReport(
         patientName: patientName,
         condition: _condition,
@@ -634,6 +638,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         triggerProCorrelations: correlations.isNotEmpty ? correlations : null,
         patientDateOfBirth: _dateOfBirth,
         patientAbhaId: _abhaId,
+        includeRiskScore: includeRiskScore,
       );
 
       final pdfBytes = await doc.save();
@@ -652,6 +657,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         medicationExceptions:
             medicationExceptions.isNotEmpty ? medicationExceptions : null,
         flareEvents: flareEvents.isNotEmpty ? flareEvents : null,
+        includeRiskScore: includeRiskScore,
       );
       final jsonStr = const JsonEncoder.withIndent('  ').convert(bundle);
       final fhirBytes = utf8.encode(jsonStr);

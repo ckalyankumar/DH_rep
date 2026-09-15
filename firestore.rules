@@ -194,6 +194,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── CLINICAL INTERPRETATION FLAGS ────────────────────────────────
+    // Patient-facing UI gates. Console / Admin SDK writes only. Signed-in
+    // clients may listen; the app falls back to compile-time defaults if
+    // this document is missing. Catch-all still denies other appConfig docs.
+    match /appConfig/clinicalInterpretationFlags {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     // ── USER PROFILE ────────────────────────────────────────────────
     // Clients may only set profile.role to patient|doctor. Protected roles
     // (clinicalReviewer, clinicalAdmin) are console / Admin SDK only.

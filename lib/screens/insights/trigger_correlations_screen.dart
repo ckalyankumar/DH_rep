@@ -8,6 +8,8 @@ import 'package:dhealth/services/insight_engine.dart';
 import 'package:dhealth/services/insight_models.dart';
 import 'package:dhealth/services/firestore_daily_log_service.dart';
 import 'package:dhealth/widgets/trigger_insight_card.dart';
+import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:dhealth/utils/theme.dart';
 
 /// Screen showing all trigger–PRO correlations in a ListView.
@@ -69,13 +71,23 @@ class _TriggerCorrelationsScreenState extends State<TriggerCorrelationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final showTriggerInsights =
+        FeatureFlagsScope.of(context).showTriggerInsights;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trigger insights'),
         backgroundColor: AppTheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: _correlations.isEmpty
+      body: !showTriggerInsights
+          ? const EmptyStateWidget(
+              emoji: '📋',
+              title: 'Trigger insights paused',
+              description:
+                  'We\'re completing a clinical safety review before showing personalized trigger patterns. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
+            )
+          : _correlations.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),

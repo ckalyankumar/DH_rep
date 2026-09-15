@@ -7,6 +7,7 @@ import 'package:dhealth/screens/doctor_portal_screen.dart';
 import 'package:dhealth/screens/onboarding/onboarding_screen.dart';
 import 'package:dhealth/screens/main_screen.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 /// Maps a `users/{uid}` document to a routing role. Unknown/missing → patient.
 String roleFromUserProfile(Map<String, dynamic>? data) {
@@ -107,7 +108,10 @@ class _AuthGateState extends State<AuthGate> {
 
                 final onboardingComplete = onboardingSnapshot.data ?? false;
                 if (onboardingComplete) {
-                  return const MainScreen();
+                  return FeatureFlagsHost(
+                    firestore: db,
+                    child: const MainScreen(),
+                  );
                 }
                 return OnboardingScreen(onComplete: () {
                   if (mounted) setState(() {});

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dhealth/models/log_analytics.dart';
 import 'package:dhealth/models/log_density_confidence.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 class WeeklyStatsCard extends StatelessWidget {
   final LogAnalytics analytics;
@@ -17,6 +18,7 @@ class WeeklyStatsCard extends StatelessWidget {
     final avgItch = analytics.getAverageItch(7);
     final isImproving = analytics.isTrendImproving();
     final density = LogDensityConfidence.forLast7Days(analytics.logs);
+    final showRiskScore = FeatureFlagsScope.of(context).showRiskScore;
 
     return Card(
       child: Padding(
@@ -34,21 +36,22 @@ class WeeklyStatsCard extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isImproving ? Colors.green[100] : Colors.orange[100],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    isImproving ? 'Improving' : 'Worsening',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: isImproving ? Colors.green[700] : Colors.orange[700],
+                if (showRiskScore)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isImproving ? Colors.green[100] : Colors.orange[100],
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      isImproving ? 'Improving' : 'Worsening',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isImproving ? Colors.green[700] : Colors.orange[700],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -65,17 +68,18 @@ class WeeklyStatsCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             GridView.count(
-              crossAxisCount: 3,
+              crossAxisCount: showRiskScore ? 3 : 2,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _buildStatTile(
-                  'Avg Risk',
-                  avgRisk.toStringAsFixed(0),
-                  Colors.red,
-                ),
+                if (showRiskScore)
+                  _buildStatTile(
+                    'Avg Risk',
+                    avgRisk.toStringAsFixed(0),
+                    Colors.red,
+                  ),
                 _buildStatTile(
                   'Avg Mood',
                   '${(avgMood / 5 * 10).toStringAsFixed(0)}%',

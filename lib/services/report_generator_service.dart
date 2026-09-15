@@ -85,7 +85,11 @@ class ReportGeneratorService {
     }
   }
 
-  /// Generate ABDM-compliant PDF report
+  /// Generate ABDM-compliant PDF report.
+  ///
+  /// [includeRiskScore] defaults to true so doctor-initiated downloads stay
+  /// unchanged. Patient Settings export passes false when showRiskScore is off,
+  /// omitting Avg/Max Risk, Trend, per-log Risk, and Risk≥85 red-flag rows.
   static Future<pw.Document> generateHealthReport({
     required String patientName,
     required String condition,
@@ -104,6 +108,7 @@ class ReportGeneratorService {
     List<WearableSource>? wearableSources,
     DateTime? patientDateOfBirth,
     String? patientAbhaId,
+    bool includeRiskScore = true,
   }) async {
     final theme = await _unicodeTheme();
     final pdf = pw.Document(theme: theme);
@@ -119,7 +124,10 @@ class ReportGeneratorService {
     final generatedAt = DateTime.now();
     final reportId = _generateReportId(generatedAt);
     final appVersion = await _getAppVersion();
-    final redFlags = _computeRedFlagSummary(logs);
+    final redFlags = _computeRedFlagSummary(
+      logs,
+      includeRiskScore: includeRiskScore,
+    );
     final gaps = _computeDataGaps(logs, startDate, endDate);
     final adherence = _computeMedicationAdherencePatterns(
       medicationExceptions ?? const [],
@@ -172,7 +180,7 @@ class ReportGeneratorService {
               _buildFlareSection(flares),
             if (flareEvents != null && flareEvents.isNotEmpty)
               pw.SizedBox(height: 12),
-            _buildDataProvenanceBlock(),
+            _buildDataProvenanceBlock(includeRiskScore: includeRiskScore),
             pw.SizedBox(height: 16),
             _buildSummaryStatsBlock(
               avgRisk: avgRisk,
@@ -182,9 +190,13 @@ class ReportGeneratorService {
               trend: trend,
               loggingDensity: loggingDensity,
               gaps: gaps,
+              includeRiskScore: includeRiskScore,
             ),
             pw.SizedBox(height: 16),
-            _buildRedFlagSection(redFlags),
+            _buildRedFlagSection(
+              redFlags,
+              includeRiskScore: includeRiskScore,
+            ),
             pw.SizedBox(height: 16),
             if (weeklyPulses != null && weeklyPulses.isNotEmpty)
               _buildSelfEfficacySection(weeklyPulses),
@@ -218,7 +230,11 @@ class ReportGeneratorService {
               ),
             if (aggregates != null && aggregates.isNotEmpty)
               pw.SizedBox(height: 16),
-            if (logs.isNotEmpty) ..._buildLongitudinalSection(logs),
+            if (logs.isNotEmpty)
+              ..._buildLongitudinalSection(
+                logs,
+                includeRiskScore: includeRiskScore,
+              ),
             if (logs.isNotEmpty) pw.SizedBox(height: 16),
             _buildMetadataUsagePrivacySection(generatedAt),
             pw.SizedBox(height: 16),
@@ -835,7 +851,9 @@ class ReportGeneratorService {
     );
   }
 
-  static pw.Widget _buildDataProvenanceBlock() {
+  static pw.Widget _buildDataProvenanceBlock({
+    required bool includeRiskScore,
+  }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(10),
       decoration: pw.BoxDecoration(
@@ -860,12 +878,13 @@ class ReportGeneratorService {
             style: const pw.TextStyle(fontSize: 9),
           ),
           pw.SizedBox(height: 4),
-          pw.Text(
-            'Scoring methodology: Daily risk score: weighted composite score '
-            '(DHealth Scoring Engine v1, condition-specific weights). Full methodology at dhealth.app/scoring.',
-            style: const pw.TextStyle(fontSize: 9),
-          ),
-          pw.SizedBox(height: 4),
+          if (includeRiskScore)
+            pw.Text(
+              'Scoring methodology: Daily risk score: weighted composite score '
+              '(DHealth Scoring Engine v1, condition-specific weights). Full methodology at dhealth.app/scoring.',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          if (includeRiskScore) pw.SizedBox(height: 4),
           pw.Text(
             'Statistical methods: Trigger analysis uses Spearman rank correlation (ρ). '
             'Minimum 8 weeks of paired data required before correlations are shown. '
@@ -1112,7 +1131,23 @@ class ReportGeneratorService {
     required bool trend,
     required _LoggingDensity loggingDensity,
     required DataGaps gaps,
+    required bool includeRiskScore,
   }) {
+    final moodBox = _buildStatBox(
+        'Avg Mood',
+        '${(avgMood / 5 * 10).toStringAsFixed(0)}%',
+        PdfColors.blue);
+    final itchBox = _buildStatBox(
+        'Avg Itch',
+        '${(avgItch / 10 * 100).toStringAsFixed(0)}%',
+        PdfColors.orange);
+    final densityBox = _buildStatBox(
+      'Logging density',
+      '${loggingDensity.loggedDays}/${loggingDensity.totalDays} days\n'
+      '(${loggingDensity.percentage.toStringAsFixed(0)}%)',
+      PdfColors.teal,
+    );
+
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -1124,35 +1159,36 @@ class ReportGeneratorService {
           ),
         ),
         pw.SizedBox(height: 8),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStatBox('Avg Risk', avgRisk.toStringAsFixed(0), PdfColors.red),
-            _buildStatBox(
-                'Avg Mood',
-                '${(avgMood / 5 * 10).toStringAsFixed(0)}%',
-                PdfColors.blue),
-            _buildStatBox(
-                'Avg Itch',
-                '${(avgItch / 10 * 100).toStringAsFixed(0)}%',
-                PdfColors.orange),
-          ],
-        ),
-        pw.SizedBox(height: 12),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStatBox('Max Risk', '$maxRisk', PdfColors.deepOrange),
-            _buildStatBox(
-                'Trend', trend ? 'Improving' : 'Worsening', trend ? PdfColors.green : PdfColors.orange),
-            _buildStatBox(
-              'Logging density',
-              '${loggingDensity.loggedDays}/${loggingDensity.totalDays} days\n'
-              '(${loggingDensity.percentage.toStringAsFixed(0)}%)',
-              PdfColors.teal,
-            ),
-          ],
-        ),
+        if (includeRiskScore) ...[
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatBox('Avg Risk', avgRisk.toStringAsFixed(0), PdfColors.red),
+              moodBox,
+              itchBox,
+            ],
+          ),
+          pw.SizedBox(height: 12),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              _buildStatBox('Max Risk', '$maxRisk', PdfColors.deepOrange),
+              _buildStatBox(
+                  'Trend',
+                  trend ? 'Improving' : 'Worsening',
+                  trend ? PdfColors.green : PdfColors.orange),
+              densityBox,
+            ],
+          ),
+        ] else
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              moodBox,
+              itchBox,
+              densityBox,
+            ],
+          ),
         pw.SizedBox(height: 8),
         pw.Text(
           gaps.hasSignificantGaps
@@ -1995,7 +2031,10 @@ class ReportGeneratorService {
   /// Title + spanning table as separate MultiPage children.
   /// A nested Column of log cards is taller than one page and cannot split,
   /// which makes the layout engine keep allocating pages until TooManyPagesException.
-  static List<pw.Widget> _buildLongitudinalSection(List<DailyLog> logs) {
+  static List<pw.Widget> _buildLongitudinalSection(
+    List<DailyLog> logs, {
+    required bool includeRiskScore,
+  }) {
     return [
       pw.Text(
         'LONGITUDINAL HEALTH RECORD',
@@ -2006,27 +2045,33 @@ class ReportGeneratorService {
       ),
       pw.SizedBox(height: 8),
       pw.Table(
-        columnWidths: {
-          0: const pw.FlexColumnWidth(1.1),
-          1: const pw.FlexColumnWidth(0.5),
-          2: const pw.FlexColumnWidth(1.4),
-          3: const pw.FlexColumnWidth(1.4),
-          4: const pw.FlexColumnWidth(2.2),
-        },
+        columnWidths: includeRiskScore
+            ? {
+                0: const pw.FlexColumnWidth(1.1),
+                1: const pw.FlexColumnWidth(0.5),
+                2: const pw.FlexColumnWidth(1.4),
+                3: const pw.FlexColumnWidth(1.4),
+                4: const pw.FlexColumnWidth(2.2),
+              }
+            : {
+                0: const pw.FlexColumnWidth(1.1),
+                1: const pw.FlexColumnWidth(1.4),
+                2: const pw.FlexColumnWidth(1.4),
+                3: const pw.FlexColumnWidth(2.2),
+              },
         children: [
           pw.TableRow(
             repeat: true,
             decoration: const pw.BoxDecoration(color: PdfColors.grey300),
             children: [
               _compactHeader('Date'),
-              _compactHeader('Risk'),
+              if (includeRiskScore) _compactHeader('Risk'),
               _compactHeader('M/I/St/Sl'),
               _compactHeader('Lesion / sleep'),
               _compactHeader('Areas / notes'),
             ],
           ),
           ...logs.map((log) {
-            final riskScore = log.calculateRiskScore();
             final scores =
                 '${log.mood}/${log.itchIntensity}/${log.stressLevel}/${log.sleepQuality}';
             final lesion =
@@ -2044,7 +2089,8 @@ class ReportGeneratorService {
             return pw.TableRow(
               children: [
                 _compactCell(DateFormat('dd MMM yyyy').format(log.date)),
-                _compactCell('$riskScore'),
+                if (includeRiskScore)
+                  _compactCell('${log.calculateRiskScore()}'),
                 _compactCell(scores),
                 _compactCell(lesion),
                 _compactCell(extra.isEmpty ? '—' : extra),
@@ -2224,7 +2270,10 @@ class ReportGeneratorService {
     );
   }
 
-  static RedFlagSummary _computeRedFlagSummary(List<DailyLog> logs) {
+  static RedFlagSummary _computeRedFlagSummary(
+    List<DailyLog> logs, {
+    required bool includeRiskScore,
+  }) {
     if (logs.isEmpty) {
       return const RedFlagSummary(
         events: [],
@@ -2241,7 +2290,7 @@ class ReportGeneratorService {
       final disrupted = log.sleepDisruption;
 
       final triggers = <String>[];
-      if (risk >= 85) {
+      if (includeRiskScore && risk >= 85) {
         triggers.add('Risk ≥ 85');
       }
       if (itch >= 9 && (disrupted || mood <= 1)) {
@@ -2290,7 +2339,10 @@ class ReportGeneratorService {
     );
   }
 
-  static pw.Widget _buildRedFlagSection(RedFlagSummary summary) {
+  static pw.Widget _buildRedFlagSection(
+    RedFlagSummary summary, {
+    required bool includeRiskScore,
+  }) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -2322,13 +2374,20 @@ class ReportGeneratorService {
           ),
           pw.SizedBox(height: 6),
           pw.Table(
-            columnWidths: {
-              0: const pw.FlexColumnWidth(1.4),
-              1: const pw.FlexColumnWidth(1),
-              2: const pw.FlexColumnWidth(2.4),
-              3: const pw.FlexColumnWidth(0.8),
-              4: const pw.FlexColumnWidth(0.8),
-            },
+            columnWidths: includeRiskScore
+                ? {
+                    0: const pw.FlexColumnWidth(1.4),
+                    1: const pw.FlexColumnWidth(1),
+                    2: const pw.FlexColumnWidth(2.4),
+                    3: const pw.FlexColumnWidth(0.8),
+                    4: const pw.FlexColumnWidth(0.8),
+                  }
+                : {
+                    0: const pw.FlexColumnWidth(1.4),
+                    1: const pw.FlexColumnWidth(2.4),
+                    2: const pw.FlexColumnWidth(0.8),
+                    3: const pw.FlexColumnWidth(0.8),
+                  },
             children: [
               pw.TableRow(
                 decoration: const pw.BoxDecoration(
@@ -2345,16 +2404,17 @@ class ReportGeneratorService {
                       ),
                     ),
                   ),
-                  pw.Padding(
-                    padding: const pw.EdgeInsets.all(6),
-                    child: pw.Text(
-                      'Risk Score',
-                      style: pw.TextStyle(
-                        fontSize: 9,
-                        fontWeight: pw.FontWeight.bold,
+                  if (includeRiskScore)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(6),
+                      child: pw.Text(
+                        'Risk Score',
+                        style: pw.TextStyle(
+                          fontSize: 9,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
                   pw.Padding(
                     padding: const pw.EdgeInsets.all(6),
                     child: pw.Text(
@@ -2397,13 +2457,14 @@ class ReportGeneratorService {
                         style: const pw.TextStyle(fontSize: 9),
                       ),
                     ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(6),
-                      child: pw.Text(
-                        '${e.riskScore}',
-                        style: const pw.TextStyle(fontSize: 9),
+                    if (includeRiskScore)
+                      pw.Padding(
+                        padding: const pw.EdgeInsets.all(6),
+                        child: pw.Text(
+                          '${e.riskScore}',
+                          style: const pw.TextStyle(fontSize: 9),
+                        ),
                       ),
-                    ),
                     pw.Padding(
                       padding: const pw.EdgeInsets.all(6),
                       child: pw.Text(

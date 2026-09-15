@@ -9,7 +9,10 @@ class FHIRBundleGenerator {
   static const String fhirVersion = '4.0.1';
   static const String abdmVersion = '1.2.0';
 
-  /// Generate FHIR Bundle from DailyLog entries
+  /// Generate FHIR Bundle from DailyLog entries.
+  ///
+  /// [includeRiskScore] defaults to true. Patient Settings export passes false
+  /// when showRiskScore is off, omitting Observation.component risk-score.
   static Map<String, dynamic> generateFHIRBundle({
     required String patientId,
     required String patientName,
@@ -18,6 +21,7 @@ class FHIRBundleGenerator {
     required DateTime reportDate,
     List<MedicationExceptionEvent>? medicationExceptions,
     List<FlareEvent>? flareEvents,
+    bool includeRiskScore = true,
   }) {
     const uuid = Uuid();
     final bundleId = uuid.v4();
@@ -38,6 +42,7 @@ class FHIRBundleGenerator {
         resourceId: uuid.v4(),
         patientId: patientId,
         log: log,
+        includeRiskScore: includeRiskScore,
       );
     }).toList();
 
@@ -212,10 +217,9 @@ class FHIRBundleGenerator {
     required String resourceId,
     required String patientId,
     required DailyLog log,
+    required bool includeRiskScore,
   }) {
-    final riskScore = log.calculateRiskScore();
-
-    return {
+    final observation = <String, dynamic>{
       'resourceType': 'Observation',
       'id': resourceId,
       'meta': {
@@ -314,7 +318,14 @@ class FHIRBundleGenerator {
           },
         ],
       },
-      'component': [
+      'note': [
+        {
+          'text': log.notes.isNotEmpty ? log.notes : 'Patient-logged symptom data',
+        }
+      ],
+    };
+    if (includeRiskScore) {
+      observation['component'] = [
         {
           'code': {
             'coding': [
@@ -326,17 +337,13 @@ class FHIRBundleGenerator {
             ],
           },
           'valueQuantity': {
-            'value': riskScore,
+            'value': log.calculateRiskScore(),
             'unit': '/100',
           },
         }
-      ],
-      'note': [
-        {
-          'text': log.notes.isNotEmpty ? log.notes : 'Patient-logged symptom data',
-        }
-      ],
-    };
+      ];
+    }
+    return observation;
   }
 
   /// Create FHIR Composition Resource (Document metadata)

@@ -7,6 +7,7 @@ import 'package:dhealth/data/eczema_clinical_data.dart';
 import 'package:dhealth/widgets/clinical_note_widget.dart'
     show ClinicalNoteType, ClinicalNoteWidget, showWhenToSeeDoctorModal;
 import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:dhealth/models/clinical_evidence_models.dart';
 
 /// ═══════════════════════════════════════════════════════════════════════
@@ -132,6 +133,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   }
 
   Widget _buildInsightsView() {
+    final flags = FeatureFlagsScope.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -141,22 +143,27 @@ class _InsightsScreenState extends State<InsightsScreen> {
           _buildClinicalDisclaimerBanner(),
           const SizedBox(height: 20),
 
-          // Health Score Card
-          _buildHealthScoreCard(),
-          const SizedBox(height: 20),
+          if (flags.showRiskScore) ...[
+            _buildHealthScoreCard(),
+            const SizedBox(height: 20),
+            _buildFlareRiskCard(),
+            const SizedBox(height: 20),
+          ],
 
-          // Flare Risk Prediction
-          _buildFlareRiskCard(),
-          const SizedBox(height: 20),
-
-          // Red Flags Section (if any - PRIORITY)
-          if (_insights!.redFlags.isNotEmpty) ...[
+          if (flags.showRedFlags && _insights!.redFlags.isNotEmpty) ...[
             _buildRedFlagsSection(),
             const SizedBox(height: 24),
           ],
 
-          // Detected Triggers with Evidence
-          if (_insights!.detectedTriggers.isNotEmpty) ...[
+          if (!flags.showTriggerInsights) ...[
+            const EmptyStateWidget(
+              emoji: '📋',
+              title: 'Trigger insights paused',
+              description:
+                  'We\'re completing a clinical safety review before showing personalized trigger patterns. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
+            ),
+            const SizedBox(height: 24),
+          ] else if (_insights!.detectedTriggers.isNotEmpty) ...[
             _buildTriggersSection(),
             const SizedBox(height: 24),
           ] else ...[
@@ -169,8 +176,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
             const SizedBox(height: 24),
           ],
 
-          // Patterns Section
-          if (_insights!.patterns.isNotEmpty) ...[
+          if (flags.showTriggerInsights && _insights!.patterns.isNotEmpty) ...[
             _buildPatternsSection(),
             const SizedBox(height: 24),
           ],

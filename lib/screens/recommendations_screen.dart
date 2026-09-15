@@ -10,6 +10,8 @@ import 'package:dhealth/services/recommendation_service.dart';
 import 'package:dhealth/services/recommendation_export_service.dart';
 import 'package:dhealth/services/personalization_service.dart';
 import 'package:dhealth/data/disorder_registry.dart';
+import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 class RecommendationsScreen extends StatefulWidget {
   final String selectedCondition;
@@ -98,6 +100,8 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
     final redFlags = disorder.redFlags;
     final guidelineSources =
         RecommendationService.getGuidelineSources(widget.selectedCondition);
+    final showRecommendations =
+        FeatureFlagsScope.of(context).showRecommendations;
 
     return Scaffold(
       appBar: AppBar(
@@ -109,13 +113,14 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
               )
             : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            tooltip: 'Export for dermatologist review',
-            onPressed: _exportCsv,
-          ),
+          if (showRecommendations)
+            IconButton(
+              icon: const Icon(Icons.download),
+              tooltip: 'Export for dermatologist review',
+              onPressed: _exportCsv,
+            ),
         ],
-        bottom: RecommendationService.showDoctorPrescribed
+        bottom: showRecommendations && RecommendationService.showDoctorPrescribed
             ? TabBar(
                 controller: _tabController,
                 labelColor: Colors.white,
@@ -128,9 +133,26 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
               )
             : null,
       ),
-      body: RecommendationService.showDoctorPrescribed
-          ? _buildTabbedBody(redFlags, guidelineSources)
-          : _buildSingleBody(redFlags, guidelineSources),
+      body: showRecommendations
+          ? (RecommendationService.showDoctorPrescribed
+              ? _buildTabbedBody(redFlags, guidelineSources)
+              : _buildSingleBody(redFlags, guidelineSources))
+          : _buildPausedBody(redFlags),
+    );
+  }
+
+  Widget _buildPausedBody(List<RedFlag> redFlags) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        const EmptyStateWidget(
+          emoji: '📋',
+          title: 'Recommendations paused',
+          description:
+              'We\'re completing a clinical safety review before showing personalized care suggestions. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
+        ),
+        if (redFlags.isNotEmpty) _buildRedFlagsSection(redFlags),
+      ],
     );
   }
 
