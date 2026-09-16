@@ -371,7 +371,7 @@ class _GaugesRow extends StatelessWidget {
             label: 'Activity',
             value: activityPct,
             max: 100,
-            color: AppTheme.terracotta,
+            color: AppTheme.primary,
             subtitle: '${aggregate.steps ?? 0} steps · ${aggregate.activeMinutes ?? 0} active min',
           ),
         ),
