@@ -17,6 +17,7 @@ import 'package:dhealth/services/user_data_delete_service.dart';
 import 'package:dhealth/services/firestore_medication_exception_service.dart';
 import 'package:dhealth/services/firestore_flare_event_service.dart';
 import 'package:dhealth/screens/wearables/connect_devices_screen.dart';
+import 'package:dhealth/screens/settings/data_sharing_screen.dart';
 import 'package:dhealth/models/daily_log.dart';
 import 'package:dhealth/models/weekly_self_efficacy_pulse.dart';
 import 'package:dhealth/models/pro_assessment.dart';
@@ -644,7 +645,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final pdfBytes = await doc.save();
       final pdfPath = await saveBytesToFile(
         pdfBytes,
-        'dhealth_report_${user.uid}.pdf',
+        'siequi_report_${user.uid}.pdf',
         mimeType: 'application/pdf',
       );
 
@@ -663,7 +664,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final fhirBytes = utf8.encode(jsonStr);
       final fhirPath = await saveBytesToFile(
         fhirBytes,
-        'dhealth_fhir_${user.uid}.json',
+        'siequi_fhir_${user.uid}.json',
         mimeType: 'application/json',
       );
 
@@ -771,6 +772,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(height: 1),
           _sectionHeader('DATA & PRIVACY'),
           ListTile(
+            title: const Text('Data sharing'),
+            subtitle: const Text('Doctors and wearables with access to your data'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const DataSharingScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1),
+          ListTile(
             title: const Text('Connected devices'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
@@ -811,7 +826,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => showLicensePage(
               context: context,
-              applicationName: 'DHealth',
+              applicationName: 'Siequi',
               applicationVersion: _appVersion.isEmpty ? null : _appVersion,
             ),
           ),
@@ -819,7 +834,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl),
             child: Text(
-              'DHealth is a tracking and education tool. It does not provide '
+              'Siequi is a tracking and education tool. It does not provide '
               'medical diagnoses or treatment recommendations.',
               style: TextStyle(
                 fontSize: 12,

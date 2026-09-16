@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>DHealth</string>
+	<string>Siequi</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -48,10 +48,22 @@
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>DHealth uses the calendar to add your self-care routine reminders.</string>
+	<string>Siequi uses the calendar to add your self-care routine reminders.</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Redirect scheme for flutter_web_auth_2 (Google OAuth2 callback for
+	     the Google Health API — backs the "Fitbit" connection slot).
+	     Must match the scheme in GOOGLE_HEALTH_REDIRECT_URI in .env. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dhealth</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

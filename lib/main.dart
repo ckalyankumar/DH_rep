@@ -153,7 +153,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'DHealth',
+      title: 'Siequi',
       theme: AppTheme.lightTheme,
       // Do not wire AppTheme.darkTheme: a dedicated dark theme is future work.
       // Using the light theme for both slots plus ThemeMode.light means the

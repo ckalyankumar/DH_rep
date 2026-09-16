@@ -10,6 +10,9 @@ import 'package:dhealth/services/insight_models.dart';
 import 'package:dhealth/services/report_generator_service.dart';
 import 'package:dhealth/utils/file_download_helper.dart';
 import 'package:dhealth/screens/doctor_clinical_thread_screen.dart';
+import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/error_state_widget.dart';
+import 'package:dhealth/widgets/skeleton_widgets.dart';
 
 /// Doctor portal: read-only list of patients who shared access with this doctor.
 ///
@@ -180,7 +183,7 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
       );
 
       final bytes = await doc.save();
-      final filename = 'dhealth_report_$patientId.pdf';
+      final filename = 'siequi_report_$patientId.pdf';
       final path = await saveBytesToFile(bytes, filename, mimeType: 'application/pdf');
 
       if (!mounted) return;
@@ -274,14 +277,22 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
               stream: query.snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: const [
+                      SkeletonLogCard(),
+                      SizedBox(height: 12),
+                      SkeletonLogCard(),
+                    ],
+                  );
                 }
                 if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text('Error loading patients: ${snapshot.error}'),
-                    ),
+                  return ErrorStateWidget(
+                    title: 'Could not load patients',
+                    description: '${snapshot.error}',
+                    // StreamBuilder re-subscribes on rebuild; there's no
+                    // separate fetch call to re-trigger here.
+                    onRetry: () => setState(() {}),
                   );
                 }
 
@@ -304,7 +315,12 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
                 final patients = patientIds.toList()..sort();
 
                 if (patients.isEmpty) {
-                  return const _EmptyState();
+                  return const EmptyStateWidget(
+                    emoji: '🔗',
+                    title: 'No patients yet',
+                    description:
+                        'Patients will appear here once they share their data with you from the Siequi app.',
+                  );
                 }
 
                 final doctorEmail = email;
@@ -381,36 +397,6 @@ class _DoctorPortalScreenState extends State<DoctorPortalScreen> {
           ),
           const _ReadOnlyFooter(),
         ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('🔗', style: TextStyle(fontSize: 40)),
-            SizedBox(height: 12),
-            Text(
-              'No patients yet',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Patients will appear here once they share their data with you from the dHealth app.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
       ),
     );
   }

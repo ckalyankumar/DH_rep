@@ -478,7 +478,7 @@ class FHIRBundleGenerator {
       'code': {
         'coding': [
           {
-            'system': 'http://dhealth.app/fhir',
+            'system': 'http://siequi.app/fhir',
             'code': 'medication-exceptions-summary',
             'display': 'Medication exceptions summary',
           }
@@ -526,7 +526,7 @@ class FHIRBundleGenerator {
         'code': {
           'coding': [
             {
-              'system': 'http://dhealth.app/fhir',
+              'system': 'http://siequi.app/fhir',
               'code': 'flare-events-summary',
               'display': 'Flare events summary',
             }
@@ -561,7 +561,7 @@ class FHIRBundleGenerator {
         'code': {
           'coding': [
             {
-              'system': 'http://dhealth.app/fhir',
+              'system': 'http://siequi.app/fhir',
               'code': 'flare-event',
               'display': 'Flare event',
             }
@@ -597,7 +597,7 @@ class FHIRBundleGenerator {
     <realmCode code="US"/>
     <typeId root="2.16.840.1.113883.1.3" extension="POCD_HD000040"/>
     <templateId root="2.16.840.1.113883.10.20.22.1.1"/>
-    <id root="2.16.840.1.113883.3.3" extension="DHealth-$patientId"/>
+    <id root="2.16.840.1.113883.3.3" extension="Siequi-$patientId"/>
     <code code="34133-9" codeSystem="2.16.840.1.113883.6.1" codeSystemName="LOINC" displayName="Summary of Care"/>
     <effectiveTime value="$timestamp"/>
     <confidentialityCode code="R" codeSystem="2.16.840.1.113883.5.25"/>
@@ -612,17 +612,17 @@ class FHIRBundleGenerator {
     <author>
         <time value="$timestamp"/>
         <assignedAuthor>
-            <id root="2.16.840.1.113883.3.3" extension="dhealth-system"/>
+            <id root="2.16.840.1.113883.3.3" extension="siequi-system"/>
             <representedOrganization>
-                <name>DHealth</name>
+                <name>Siequi</name>
             </representedOrganization>
         </assignedAuthor>
     </author>
     <custodian>
         <assignedCustodian>
             <representedCustodianOrganization>
-                <id root="2.16.840.1.113883.3.3" extension="dhealth-custodian"/>
-                <name>DHealth Custodian</name>
+                <id root="2.16.840.1.113883.3.3" extension="siequi-custodian"/>
+                <name>Siequi Custodian</name>
             </representedCustodianOrganization>
         </assignedCustodian>
     </custodian>

@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:dhealth/widgets/skeleton_widgets.dart';
+import 'package:dhealth/widgets/error_state_widget.dart';
+import 'package:dhealth/utils/theme.dart';
 import 'package:intl/intl.dart';
 
 import 'package:dhealth/models/daily_log.dart';
@@ -197,7 +199,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
       );
 
       final bytes = await doc.save();
-      final filename = 'dhealth_report_${widget.patientId}.pdf';
+      final filename = 'siequi_report_${widget.patientId}.pdf';
       final path = await saveBytesToFile(bytes, filename, mimeType: 'application/pdf');
       _showSnackBar(path.startsWith('downloaded:') ? 'PDF downloaded' : 'PDF saved to $path');
       _recordDoctorView('report');
@@ -230,7 +232,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
 
       final jsonStr = const JsonEncoder.withIndent('  ').convert(bundle);
       final bytes = utf8.encode(jsonStr);
-      final filename = 'dhealth_fhir_${widget.patientId}.json';
+      final filename = 'siequi_fhir_${widget.patientId}.json';
       final path = await saveBytesToFile(bytes, filename, mimeType: 'application/json');
       _showSnackBar(path.startsWith('downloaded:') ? 'FHIR bundle downloaded' : 'FHIR bundle saved to $path');
       _recordDoctorView('report');
@@ -269,21 +271,10 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
 
   Widget _buildBody() {
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadLogs,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
+      return ErrorStateWidget(
+        title: 'Could not load patient data',
+        description: _error!,
+        onRetry: _loadLogs,
       );
     }
 
@@ -443,15 +434,15 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.teal.withValues(alpha: 0.10),
+            color: AppTheme.disclaimerBg,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.teal.withValues(alpha: 0.25)),
+            border: Border.all(color: AppTheme.disclaimerBorder.withValues(alpha: 0.4)),
           ),
           child: Text(
             accessText,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
-              color: Colors.teal.shade900,
+              color: AppTheme.disclaimerText,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -566,7 +557,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
                 spots: spots,
                 isCurved: true,
                 barWidth: 3,
-                color: Colors.teal.shade700,
+                color: AppTheme.secondary,
                 dotData: FlDotData(
                   show: true,
                   checkToShowDot: (spot, barData) {
@@ -577,7 +568,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
                   getDotPainter: (spot, percent, barData, index) {
                     return FlDotCirclePainter(
                       radius: 4.5,
-                      color: Colors.red.shade700,
+                      color: AppTheme.riskUrgent,
                       strokeWidth: 2,
                       strokeColor: Colors.white,
                     );
@@ -585,7 +576,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
                 ),
                 belowBarData: BarAreaData(
                   show: true,
-                  color: Colors.teal.withValues(alpha: 0.12),
+                  color: AppTheme.secondary.withValues(alpha: 0.12),
                 ),
               ),
             ],
@@ -642,7 +633,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
       mcid = _crossedMcid(previous, current);
     }
 
-    final bg = mcid ? Colors.teal.withValues(alpha: 0.08) : null;
+    final bg = mcid ? AppTheme.secondary.withValues(alpha: 0.08) : null;
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -817,11 +808,11 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
                 spots: spots,
                 isCurved: true,
                 barWidth: 3,
-                color: Colors.teal.shade700,
+                color: AppTheme.secondary,
                 dotData: const FlDotData(show: false),
                 belowBarData: BarAreaData(
                   show: true,
-                  color: Colors.teal.withValues(alpha: 0.10),
+                  color: AppTheme.secondary.withValues(alpha: 0.10),
                 ),
               ),
             ],
@@ -843,7 +834,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
             icon: const Text('⬇'),
             label: const Text('Download PDF Report'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
+              backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
@@ -854,7 +845,7 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
             icon: const Text('⬇'),
             label: const Text('Download FHIR Bundle'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
+              backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
@@ -977,16 +968,16 @@ class _DoctorPatientDetailScreenState extends State<DoctorPatientDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.teal.withValues(alpha: 0.12),
+        color: AppTheme.secondary.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.teal.withValues(alpha: 0.25)),
+        border: Border.all(color: AppTheme.secondary.withValues(alpha: 0.3)),
       ),
       child: Text(
         text,
-        style: TextStyle(
+        style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          color: Colors.teal.shade800,
+          color: AppTheme.secondaryDark,
         ),
       ),
     );

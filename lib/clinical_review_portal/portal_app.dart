@@ -22,7 +22,7 @@ class ClinicalReviewPortalApp extends StatelessWidget {
     final portalAuth = auth ?? FirebasePortalAuth();
     final portalService = service ?? ClinicalReviewPortalService();
     return MaterialApp(
-      title: 'DHealth Clinical Review',
+      title: 'Siequi Clinical Review',
       theme: PortalTheme.data,
       themeMode: ThemeMode.light,
       home: PortalAuthGate(

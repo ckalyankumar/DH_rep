@@ -204,7 +204,7 @@ class EvidenceDataSummary {
 
   static String getSummaryStats() {
     return '''
-DHealth Clinical Evidence Database
+Siequi Clinical Evidence Database
 ===================================
 Disorders Implemented: 2 (Psoriasis, Eczema)
 Future Disorders: 3 (Rosacea, Urticaria, Seborrheic Dermatitis)

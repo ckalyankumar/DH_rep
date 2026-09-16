@@ -224,7 +224,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: AppSpacing.xl),
           Text(
-            'DHealth helps you understand what affects your skin day to day, '
+            'Siequi helps you understand what affects your skin day to day, '
             'and gives your doctor a clear picture at every visit.',
             style: TextStyle(
               fontSize: 14,
