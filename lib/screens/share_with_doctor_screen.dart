@@ -5,6 +5,7 @@ import 'package:dhealth/models/doctor_patient_link.dart';
 import 'package:dhealth/services/doctor_patient_link_service.dart';
 import 'package:dhealth/screens/login_screen.dart';
 import 'package:dhealth/screens/patient_clinical_thread_screen.dart';
+import 'package:dhealth/utils/theme.dart';
 
 /// Patient flow: Share data with a doctor via email and explicit consent.
 ///
@@ -110,7 +111,7 @@ class _ShareWithDoctorScreenState extends State<ShareWithDoctorScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Revoke', style: TextStyle(color: Colors.red)),
+            child: Text('Revoke', style: TextStyle(color: AppTheme.dangerColor)),
           ),
         ],
       ),
@@ -189,20 +190,20 @@ class _ShareWithDoctorScreenState extends State<ShareWithDoctorScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue[50],
-        border: Border.all(color: Colors.blue),
+        color: AppTheme.disclaimerBg,
+        border: Border.all(color: AppTheme.disclaimerBorder.withValues(alpha: 0.4)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+          const Icon(Icons.info_outline, color: AppTheme.disclaimerText, size: 20),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Text(
               'You control who sees your data. Doctors can only view your logs and reports in read-only mode. '
               'You can revoke access at any time.',
-              style: TextStyle(fontSize: 12, color: Colors.blue[900]),
+              style: TextStyle(fontSize: 12, color: AppTheme.disclaimerText),
             ),
           ),
         ],
@@ -252,7 +253,7 @@ class _ShareWithDoctorScreenState extends State<ShareWithDoctorScreen> {
               ),
               if (_error != null) ...[
                 const SizedBox(height: 8),
-                Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                Text(_error!, style: TextStyle(color: AppTheme.dangerColor, fontSize: 12)),
               ],
               const SizedBox(height: 16),
               SizedBox(
@@ -294,7 +295,7 @@ class _ShareWithDoctorScreenState extends State<ShareWithDoctorScreen> {
               padding: EdgeInsets.all(24),
               child: Text(
                 'No doctors have access yet. Add one above.',
-                style: TextStyle(color: Colors.grey),
+                style: TextStyle(color: AppTheme.textSecondary),
               ),
             ),
           )
@@ -330,7 +331,7 @@ class _ShareWithDoctorScreenState extends State<ShareWithDoctorScreen> {
                     ),
                     TextButton(
                       onPressed: () => _revoke(link),
-                      child: const Text('Revoke', style: TextStyle(color: Colors.red)),
+                      child: Text('Revoke', style: TextStyle(color: AppTheme.dangerColor)),
                     ),
                   ],
                 ),
