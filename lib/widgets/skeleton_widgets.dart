@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dhealth/utils/theme.dart';
 
 /// A single shimmer block. Animates opacity 1.0 → 0.4 → 1.0 in a 1.4s loop.
 class SkeletonBox extends StatefulWidget {
@@ -22,8 +23,8 @@ class _SkeletonBoxState extends State<SkeletonBox>
   late AnimationController _controller;
   late Animation<double> _animation;
 
-  static const _baseColor = Color(0xFFE8EDEB);
-  static const _highlightColor = Color(0xFFF0F4F2);
+  static const _baseColor = AppTheme.surfaceAlt;
+  static const _highlightColor = AppTheme.surfaceWarm;
 
   @override
   void initState() {

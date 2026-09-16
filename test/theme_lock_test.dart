@@ -34,9 +34,9 @@ void main() {
     expect(MediaQuery.platformBrightnessOf(ctx), Brightness.light);
   });
 
-  test('light color scheme uses teal branding with readable on-colors', () {
+  test('light color scheme uses terracotta branding with readable on-colors', () {
     final scheme = AppTheme.lightTheme.colorScheme;
-    expect(scheme.primary, const Color(0xFF1A6B5A));
+    expect(scheme.primary, const Color(0xFFC9704F));
     expect(scheme.onPrimary, const Color(0xFFFFFFFF));
     expect(scheme.surface, const Color(0xFFFFFFFF));
     expect(scheme.onSurface, AppTheme.textPrimaryColor);

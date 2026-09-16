@@ -3,39 +3,70 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  // Colors
-  static const primaryColor = Color(0xFF3498DB);
-  static const primary = Color(0xFF1A6B5A);
-  static const primaryDark = Color(0xFF2980B9);
-  static const primaryLight = Color(0xFF2E9B82);
-  static const wearableBlue = Color(0xFF4A8AC4);
-  static const accentColor = Color(0xFF27AE60);
-  static const warningColor = Color(0xFFF39C12);
-  static const dangerColor = Color(0xFFE74C3C);
-  static const backgroundColor = Color(0xFFF8F9FA);
-  static const surfaceColor = Color(0xFFFFFFFF);
-  static const surfaceAlt = Color(0xFFF5F7F6);
+  // --- Brand: terracotta-led palette (rebrand from teal-primary), matches pivolt.net ---
+  static const primary = Color(0xFFC9704F);
+  static const primaryLight = Color(0xFFD9724C);
+  static const primaryDark = Color(0xFFA6512F);
+
+  // Secondary: the OLD brand primary, repurposed. Reserved for clinical/
+  // statistical UI only (disclaimers, low-risk band) — not general brand accent.
+  static const secondary = Color(0xFF1A6B5A);
+  static const secondaryLight = Color(0xFF2E9B82);
+  static const secondaryDark = Color(0xFF0E4A3D);
+
+  static const accentBg = Color(0xFFFBEFE8);
+
+  // Neutrals
+  static const bg = Color(0xFFF8F6F1);
+  static const surface = Color(0xFFFFFFFF);
+  static const surfaceAlt = Color(0xFFF1EEE5);
+  static const surfaceWarm = Color(0xFFFDFBF7);
+  static const border = Color(0xFFE2DCCC);
+
+  // Legacy aliases — many existing call sites reference these names directly.
+  // Values updated to the new palette so the rebrand cascades automatically;
+  // do not reintroduce old hex literals here.
+  static const backgroundColor = bg;
+  static const surfaceColor = surface;
+  static const borderColor = border;
+
+  static const primaryColor = primary;
+
   static const textPrimaryColor = Color(0xFF2C3E50);
   static const textSecondaryColor = Color(0xFF6C757D);
   static const textSecondary = Color(0xFF6C757D);
   static const textMuted = Color(0xFF9CA3AF);
-  static const borderColor = Color(0xFFDEE2E6);
-  // Wearable / risk gauge colors
+
+  // Non-brand illustrative/status colors — untouched by the rebrand.
+  static const wearableBlue = Color(0xFF4A8AC4);
+  static const accentColor = Color(0xFF27AE60);
+  static const warningColor = Color(0xFFF39C12);
+  static const dangerColor = Color(0xFFE74C3C);
   static const sleep = Color(0xFF3498DB);
   static const hrvPurple = Color(0xFF8B5CF6);
-  static const riskLow = Color(0xFF27AE60);
-  static const riskMed = Color(0xFFF39C12);
-  static const riskHigh = Color(0xFFE74C3C);
-  static const terracotta = Color(0xFFE8825A);
+
+  // Risk bands — semantic, not brand. Values per the finalized design system;
+  // do not derive these from primary/secondary.
+  static const riskLow = Color(0xFF2E9B82);
+  static const riskMedium = Color(0xFFE8B84B);
+  static const riskMed = riskMedium; // legacy alias, existing call sites
+  static const riskHigh = Color(0xFFD9724C);
+  static const riskUrgent = Color(0xFFB84040);
+
+  /// Calm teal-tinted treatment for "statistical association only" style
+  /// disclaimers. Not for red-flag/urgent banners — those use [riskUrgent].
+  static const disclaimerBg = Color(0xFFEAF6F3);
+  static const disclaimerBorder = secondary;
+  static const disclaimerText = secondaryDark;
 
   static const _colorSchemeLight = ColorScheme.light(
-    primary: Color(0xFF1A6B5A),
+    primary: primary,
     onPrimary: Color(0xFFFFFFFF),
-    secondary: Color(0xFFE8825A),
+    secondary: secondary,
     onSecondary: Color(0xFFFFFFFF),
     surface: Color(0xFFFFFFFF),
     onSurface: Color(0xFF2C3E50),
-    error: Color(0xFFB84040),
+    error: riskUrgent,
     onError: Color(0xFFFFFFFF),
     outline: borderColor,
     surfaceContainerHighest: Color(0xFFD5DDD9),
@@ -47,9 +78,9 @@ class AppTheme {
       brightness: Brightness.light,
       colorScheme: _colorSchemeLight,
       primaryColor: _colorSchemeLight.primary,
-      scaffoldBackgroundColor: const Color(0xFFF5F7F6),
+      scaffoldBackgroundColor: bg,
       appBarTheme: AppBarTheme(
-        backgroundColor: const Color(0xFF1A6B5A),
+        backgroundColor: primary,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
@@ -68,8 +99,8 @@ class AppTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: Colors.white,
-        selectedItemColor: Color(0xFF1A6B5A),
-        unselectedItemColor: Color(0xFF8AA69B),
+        selectedItemColor: primary,
+        unselectedItemColor: textMuted,
         selectedLabelStyle:
             TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
         unselectedLabelStyle:
@@ -86,7 +117,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFFF5F7F6),
+        fillColor: surfaceAlt,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: const BorderSide(color: borderColor),
@@ -97,7 +128,7 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF1A6B5A), width: 2),
+          borderSide: const BorderSide(color: primary, width: 2),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -129,7 +160,7 @@ class AppTheme {
           return _colorSchemeLight.surface;
         }),
         checkColor: WidgetStateProperty.all(_colorSchemeLight.onPrimary),
-        side: const BorderSide(color: Color(0xFF1A6B5A), width: 1.5),
+        side: const BorderSide(color: primary, width: 1.5),
       ),
       radioTheme: RadioThemeData(
         fillColor: WidgetStateProperty.all(_colorSchemeLight.primary),
@@ -143,6 +174,7 @@ class AppTheme {
         backgroundColor: _colorSchemeLight.surface,
       ),
       textTheme: TextTheme(
+        // Fraunces: display/headline tier.
         displayLarge: GoogleFonts.fraunces(
           fontSize: 32,
           fontWeight: FontWeight.w700,
@@ -153,40 +185,48 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: textPrimaryColor,
         ),
-        titleMedium: TextStyle(
+        headlineSmall: GoogleFonts.fraunces(
+          color: textPrimaryColor,
+          fontSize: 24,
+          fontWeight: FontWeight.w600,
+        ),
+        // DM Sans: body/UI tier.
+        titleMedium: GoogleFonts.dmSans(
           fontSize: 17,
           fontWeight: FontWeight.w600,
           color: textPrimaryColor,
         ),
-        bodyLarge: TextStyle(
+        bodyLarge: GoogleFonts.dmSans(
           fontSize: 15,
           fontWeight: FontWeight.w400,
           height: 1.6,
           color: textPrimaryColor,
         ),
-        labelMedium: TextStyle(
+        labelMedium: GoogleFonts.dmSans(
           fontSize: 13,
           fontWeight: FontWeight.w500,
           letterSpacing: 0.02,
           color: textPrimaryColor,
         ),
-        bodySmall: TextStyle(
+        bodySmall: GoogleFonts.dmSans(
           fontSize: 12,
           fontWeight: FontWeight.w400,
           color: textSecondaryColor,
         ),
-        headlineSmall: TextStyle(
-          color: textPrimaryColor,
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-        ),
-        bodyMedium: TextStyle(
+        bodyMedium: GoogleFonts.dmSans(
           color: textPrimaryColor,
           fontSize: 14,
         ),
       ),
     );
   }
+
+  /// Fraunces, weight 500, upright — the Siequi wordmark specifically.
+  /// Single-color only: never split-color or gradient this style.
+  static TextStyle get wordmarkStyle => GoogleFonts.fraunces(
+        fontWeight: FontWeight.w500,
+        fontStyle: FontStyle.normal,
+      );
 
   /// Unused until a dedicated dark theme is designed. MaterialApp is locked
   /// to [lightTheme] via ThemeMode.light so this is not applied.
