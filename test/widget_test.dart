@@ -105,7 +105,7 @@ void main() {
       await tester.pumpWidget(_app(const MainScreen()));
       await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
 
-      expect(find.text('DHealth'), findsWidgets);
+      expect(find.text('Siequi'), findsWidgets);
       expect(find.text('Select Your Condition'), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
       expect(find.text('No log for today yet'), findsOneWidget);
@@ -209,7 +209,7 @@ void main() {
       expect(find.text('No patients yet'), findsOneWidget);
       expect(
         find.text(
-          'Patients will appear here once they share their data with you from the dHealth app.',
+          'Patients will appear here once they share their data with you from the Siequi app.',
         ),
         findsOneWidget,
       );
