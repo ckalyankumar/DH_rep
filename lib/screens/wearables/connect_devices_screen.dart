@@ -9,6 +9,7 @@ import 'package:dhealth/services/wearables/wearable_adapter_factory.dart';
 import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/utils/spacing.dart';
 import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/skeleton_widgets.dart';
 
 class WearableViewModel extends ChangeNotifier {
   final String uid;
@@ -21,6 +22,7 @@ class WearableViewModel extends ChangeNotifier {
   String? _loadError;
   bool _syncing = false;
   DateTime? _lastSyncAt;
+  List<String> _lastSyncErrors = [];
 
   WearableViewModel({
     required this.uid,
@@ -39,6 +41,34 @@ class WearableViewModel extends ChangeNotifier {
       _sources.any((s) => s.provider == p && s.isActive);
 
   bool isConnecting(WearableProvider p) => _connecting.contains(p);
+
+  WearableSource? sourceFor(WearableProvider p) {
+    for (final s in _sources) {
+      if (s.provider == p && s.isActive) return s;
+    }
+    return null;
+  }
+
+  /// True when the connected source's OAuth token has expired and a
+  /// reconnect is needed to keep syncing. Derived from [WearableSource
+  /// .tokenExpiresAt] — never fabricated.
+  bool needsReauth(WearableProvider p) {
+    final source = sourceFor(p);
+    final expiry = source?.tokenExpiresAt;
+    if (expiry == null) return false;
+    return expiry.isBefore(DateTime.now());
+  }
+
+  /// Error message from the most recent sync run for this provider, if any.
+  /// Parsed from [SyncAuditRecord.errors], which are formatted
+  /// `"${provider.name}: $error"` by [WearableSyncService.syncAll].
+  String? errorFor(WearableProvider p) {
+    final prefix = '${p.name}: ';
+    for (final e in _lastSyncErrors) {
+      if (e.startsWith(prefix)) return e.substring(prefix.length);
+    }
+    return null;
+  }
 
   Future<void> load() async {
     _loading = true;
@@ -59,6 +89,7 @@ class WearableViewModel extends ChangeNotifier {
       } else {
         _lastSyncAt = audit?.ranAt;
       }
+      _lastSyncErrors = audit?.errors ?? [];
     } catch (e) {
       _loadError = 'Failed to load devices: $e';
     } finally {
@@ -132,15 +163,37 @@ class ConnectDevicesScreen extends StatefulWidget {
 class _ConnectDevicesScreenState extends State<ConnectDevicesScreen> {
   late WearableViewModel _vm;
 
+  // Providers offered on this screen. Fitbit is intentionally excluded:
+  // the adapter is built and tested against the Google Health API, but
+  // parked — not scheduled — pending Google's recurring CASA security
+  // audit cost/benefit (see DOCUMENTATION.md §7 and
+  // fitbit_adapter.dart's header comment). This is a deliberate omission,
+  // not a "coming soon" placeholder.
+  static final List<WearableProvider> _visibleProviders = WearableProvider
+      .values
+      .where((p) => p != WearableProvider.fitbit)
+      .toList();
+
   @override
   void initState() {
     super.initState();
+    // An injected viewModel (tests, previews) always wins — checked before
+    // touching FirebaseAuth.instance at all, so tests never need a live
+    // Firebase app just to render this screen.
+    final injected = widget.viewModel;
+    if (injected != null) {
+      _vm = injected;
+      _vm.addListener(_onVmChanged);
+      _vm.load();
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       _vm = WearableViewModel(uid: '');
       return;
     }
-    _vm = widget.viewModel ?? WearableViewModel(uid: user.uid);
+    _vm = WearableViewModel(uid: user.uid);
     _vm.addListener(_onVmChanged);
     _vm.load();
   }
@@ -305,7 +358,17 @@ class _ConnectDevicesScreenState extends State<ConnectDevicesScreen> {
         backgroundColor: AppTheme.primary,
       ),
       body: _vm.loading
-          ? const Center(child: CircularProgressIndicator())
+          ? SingleChildScrollView(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: const [
+                  SkeletonLogCard(),
+                  SizedBox(height: 12),
+                  SkeletonStatsRow(),
+                ],
+              ),
+            )
           : _vm.loadError != null
               ? EmptyStateWidget(
                   emoji: '⚠️',
@@ -342,9 +405,9 @@ class _ConnectDevicesScreenState extends State<ConnectDevicesScreen> {
                           crossAxisSpacing: AppSpacing.md,
                           mainAxisSpacing: AppSpacing.md,
                         ),
-                        itemCount: WearableProvider.values.length,
+                        itemCount: _visibleProviders.length,
                         itemBuilder: (context, i) {
-                          final p = WearableProvider.values[i];
+                          final p = _visibleProviders[i];
                           return _ProviderCard(
                             provider: p,
                             name: _providerName(p),
@@ -352,6 +415,9 @@ class _ConnectDevicesScreenState extends State<ConnectDevicesScreen> {
                             scopes: WearableAdapterFactory.get(p).supportedScopes,
                             isConnected: _vm.isConnected(p),
                             isConnecting: _vm.isConnecting(p),
+                            isSyncing: _vm.syncing,
+                            needsReauth: _vm.needsReauth(p),
+                            errorMessage: _vm.errorFor(p),
                             onConnect: () => _onConnect(p),
                             onDisconnect: () => _onDisconnect(p),
                             scopeLabel: _scopeLabel,
@@ -485,6 +551,11 @@ class _ConsentBanner extends StatelessWidget {
   }
 }
 
+/// Per-provider connection status. Only meaningful when connected —
+/// derived from real signals (sync-in-progress flag, token expiry, last
+/// sync error), never fabricated.
+enum _ConnectionStatus { syncing, needsReauth, error, connected }
+
 class _ProviderCard extends StatelessWidget {
   final WearableProvider provider;
   final String name;
@@ -492,6 +563,9 @@ class _ProviderCard extends StatelessWidget {
   final List<WearableScope> scopes;
   final bool isConnected;
   final bool isConnecting;
+  final bool isSyncing;
+  final bool needsReauth;
+  final String? errorMessage;
   final VoidCallback onConnect;
   final VoidCallback onDisconnect;
   final String Function(WearableScope) scopeLabel;
@@ -503,14 +577,51 @@ class _ProviderCard extends StatelessWidget {
     required this.scopes,
     required this.isConnected,
     required this.isConnecting,
+    this.isSyncing = false,
+    this.needsReauth = false,
+    this.errorMessage,
     required this.onConnect,
     required this.onDisconnect,
     required this.scopeLabel,
   });
 
+  _ConnectionStatus get _status {
+    if (isSyncing) return _ConnectionStatus.syncing;
+    if (needsReauth) return _ConnectionStatus.needsReauth;
+    if (errorMessage != null) return _ConnectionStatus.error;
+    return _ConnectionStatus.connected;
+  }
+
+  ({IconData icon, Color color, String label}) get _statusVisual {
+    switch (_status) {
+      case _ConnectionStatus.syncing:
+        return (icon: Icons.sync, color: AppTheme.primary, label: 'Syncing');
+      case _ConnectionStatus.needsReauth:
+        return (
+          icon: Icons.warning_amber_rounded,
+          color: AppTheme.warningColor,
+          label: 'Needs re-auth',
+        );
+      case _ConnectionStatus.error:
+        return (
+          icon: Icons.error_outline,
+          color: AppTheme.dangerColor,
+          label: 'Sync error',
+        );
+      case _ConnectionStatus.connected:
+        return (
+          icon: Icons.check_circle,
+          color: AppTheme.accentColor,
+          label: 'Connected',
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final statusVisual = isConnected ? _statusVisual : null;
+
     return Card(
       child: Padding(
         padding: EdgeInsets.all(AppSpacing.md),
@@ -528,17 +639,30 @@ class _ProviderCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                if (isConnected)
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: AppTheme.accentColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
+                if (statusVisual != null)
+                  Icon(statusVisual.icon, size: 16, color: statusVisual.color),
               ],
             ),
+            if (statusVisual != null) ...[
+              SizedBox(height: AppSpacing.xs),
+              Text(
+                statusVisual.label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: statusVisual.color,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (_status == _ConnectionStatus.error && errorMessage != null)
+                Text(
+                  errorMessage!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppTheme.textSecondary,
+                    fontSize: 10,
+                  ),
+                ),
+            ],
             SizedBox(height: AppSpacing.xs),
             Wrap(
               spacing: AppSpacing.xs,
@@ -572,14 +696,23 @@ class _ProviderCard extends StatelessWidget {
                       ],
                     )
                   : isConnected
-                      ? OutlinedButton(
-                          onPressed: onDisconnect,
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: AppTheme.surfaceAlt,
-                            foregroundColor: AppTheme.textSecondary,
-                          ),
-                          child: const Text('Disconnect'),
-                        )
+                      ? (needsReauth
+                          ? ElevatedButton(
+                              onPressed: onConnect,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.warningColor,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Reconnect'),
+                            )
+                          : OutlinedButton(
+                              onPressed: onDisconnect,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: AppTheme.surfaceAlt,
+                                foregroundColor: AppTheme.textSecondary,
+                              ),
+                              child: const Text('Disconnect'),
+                            ))
                       : ElevatedButton(
                           onPressed: onConnect,
                           style: ElevatedButton.styleFrom(
