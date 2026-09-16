@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node clinical_review_rules.test.js",
+    "test:clinical-review": "node clinical_review_rules.test.js"
   },
   "keywords": [],
   "author": "",
