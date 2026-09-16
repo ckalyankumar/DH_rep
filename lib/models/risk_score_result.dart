@@ -29,9 +29,9 @@ class RiskScoreResult {
 
   /// Band thresholds: 0–30 low, 31–50 moderate, 51–70 high, 71+ urgent
   static String scoreToBand(int score) {
-    if (score >= 85) return 'urgent';
-    if (score >= 70) return 'high';
-    if (score >= 50) return 'moderate';
+    if (score >= 71) return 'urgent';
+    if (score >= 51) return 'high';
+    if (score >= 31) return 'moderate';
     return 'low';
   }
 }

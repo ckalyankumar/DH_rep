@@ -30,9 +30,13 @@ import 'package:dhealth/widgets/feature_flags_scope.dart';
 import 'package:dhealth/widgets/trigger_insight_card.dart';
 import 'package:dhealth/screens/insights/trigger_correlations_screen.dart';
 import 'package:dhealth/utils/spacing.dart';
+import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/models/clinical_evidence_models.dart';
+import 'package:dhealth/models/risk_score_result.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
 import 'package:dhealth/services/notification_service.dart';
+import 'package:dhealth/widgets/empty_state_widget.dart';
+import 'package:dhealth/widgets/skeleton_widgets.dart';
 
 
 import 'dart:io' show Platform;
@@ -404,46 +408,20 @@ class _MainScreenState extends State<MainScreen> {
                         dailyLogService: _dailyLogService!,
                         condition: selectedCondition,
                       )
-                    : Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.lightbulb,
-                                size: 48, color: Colors.amber),
-                            SizedBox(height: 16),
-                            Text('Insights Tab',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600)),
-                            SizedBox(height: 8),
-                            Text('Insights coming soon',
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                          ],
-                        ),
+                    : const EmptyStateWidget(
+                        emoji: '💡',
+                        title: 'Insights Tab',
+                        description: 'Insights coming soon',
                       ))
                 : (_dailyLogService != null
                     ? RecommendationsScreen(
                         selectedCondition: selectedCondition,
                         dailyLogService: _dailyLogService!,
                       )
-                    : Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.recommend,
-                                size: 48, color: Colors.grey),
-                            SizedBox(height: 16),
-                            Text('Recommendations',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600)),
-                            SizedBox(height: 8),
-                            Text('Loading...',
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey)),
-                          ],
-                        ),
+                    : const EmptyStateWidget(
+                        emoji: '🗒️',
+                        title: 'Recommendations',
+                        description: 'Loading...',
                       ));
 
     final logs = _dailyLogService?.getLogs() ?? [];
@@ -475,6 +453,85 @@ class _MainScreenState extends State<MainScreen> {
         Expanded(child: content),
       ],
     );
+  }
+
+  static const _riskComponentLabels = {
+    'itch': 'itch',
+    'lesion': 'lesion severity',
+    'extent': 'affected area',
+    'stress': 'stress',
+    'mood': 'mood',
+    'sleep': 'sleep disruption',
+    'env': 'environmental factors',
+  };
+
+  /// Single source of truth for band → badge type: [RiskScoreResult.band]
+  /// (from [RiskScoreResult.scoreToBand], or forced 'urgent' on red-flag
+  /// override). Do not re-derive the band from the raw score elsewhere.
+  RiskBadgeType _riskBadgeType(String band) {
+    switch (band) {
+      case 'low':
+        return RiskBadgeType.low;
+      case 'moderate':
+        return RiskBadgeType.medium;
+      case 'high':
+        return RiskBadgeType.high;
+      case 'urgent':
+        return RiskBadgeType.urgent;
+      default:
+        return RiskBadgeType.low;
+    }
+  }
+
+  String _riskBandLabel(String band) {
+    switch (band) {
+      case 'low':
+        return 'Low Risk';
+      case 'moderate':
+        return 'Moderate';
+      case 'high':
+        return 'High Risk';
+      case 'urgent':
+        return 'Urgent';
+      default:
+        return 'Low Risk';
+    }
+  }
+
+  Color _riskBandColor(String band) {
+    switch (band) {
+      case 'low':
+        return AppTheme.riskLow;
+      case 'moderate':
+        return AppTheme.riskMedium;
+      case 'high':
+        return AppTheme.riskHigh;
+      case 'urgent':
+        return AppTheme.riskUrgent;
+      default:
+        return AppTheme.riskLow;
+    }
+  }
+
+  /// "43/100 — 20 from itch, 10 from sleep disruption, 8 from stress".
+  /// Surfaces [RiskScoreResult.components] (already computed by
+  /// RiskScoreCalculator) so the score is never shown as a bare number.
+  String _riskBreakdownText(RiskScoreResult result) {
+    final parts = <String, double>{
+      for (final entry in result.components.entries)
+        (_riskComponentLabels[entry.key] ?? entry.key): entry.value,
+      if (result.trendModifier != 0) 'recent trend': result.trendModifier,
+      if (result.triggerModifier != 0) 'trigger pattern': result.triggerModifier,
+      if (result.wearableModifier != 0)
+        'wearable data': result.wearableModifier.toDouble(),
+    };
+    final sorted = parts.entries.where((e) => e.value.round() != 0).toList()
+      ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
+    if (sorted.isEmpty) return '${result.finalScore}/100';
+    final breakdown = sorted
+        .map((e) => '${e.value.round()} from ${e.key}')
+        .join(', ');
+    return '${result.finalScore}/100 — $breakdown';
   }
 
   Widget _buildHomeScreen() {
@@ -583,24 +640,14 @@ class _MainScreenState extends State<MainScreen> {
                               style: const TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.blueAccent,
+                                color: AppTheme.primary,
                               ),
                             ),
                           ],
                         ),
                         RiskBadgeWidget(
-                          type: riskResult.band == 'urgent' || todayRiskScore > 70
-                              ? RiskBadgeType.high
-                              : todayRiskScore <= 30
-                                  ? RiskBadgeType.low
-                                  : RiskBadgeType.medium,
-                          label: riskResult.band == 'urgent'
-                              ? 'Urgent'
-                              : todayRiskScore <= 30
-                                  ? 'Low Risk'
-                                  : todayRiskScore <= 50
-                                      ? 'Moderate'
-                                      : 'High Risk',
+                          type: _riskBadgeType(riskResult.band),
+                          label: _riskBandLabel(riskResult.band),
                         ),
                       ],
                     ),
@@ -608,13 +655,16 @@ class _MainScreenState extends State<MainScreen> {
                     LinearProgressIndicator(
                       value: todayRiskScore / 100,
                       minHeight: 8,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation(
-                        todayRiskScore <= 30
-                            ? Colors.green
-                            : todayRiskScore <= 60
-                                ? Colors.orange
-                                : Colors.red,
+                      backgroundColor: AppTheme.surfaceAlt,
+                      valueColor:
+                          AlwaysStoppedAnimation(_riskBandColor(riskResult.band)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _riskBreakdownText(riskResult),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textSecondary,
                       ),
                     ),
                     if (riskResult.usedPersonalWeights)
@@ -624,7 +674,7 @@ class _MainScreenState extends State<MainScreen> {
                           'Based on your last 90 days of data.',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: AppTheme.textSecondary,
                           ),
                         ),
                       ),
@@ -639,14 +689,14 @@ class _MainScreenState extends State<MainScreen> {
                 child: Center(
                   child: Column(
                     children: [
-                      const Icon(Icons.edit, size: 32, color: Colors.grey),
+                      const Icon(Icons.edit, size: 32, color: AppTheme.textMuted),
                       const SizedBox(height: 12),
                       const Text(
                         'No log for today yet',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey,
+                          color: AppTheme.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -718,15 +768,10 @@ class _MainScreenState extends State<MainScreen> {
 
           // Environmental data
           if (_isLoading)
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-            )
+            const SkeletonStatsRow()
           else if (_errorMessage != null)
             Card(
-              color: Colors.red[50],
+              color: AppTheme.dangerColor.withValues(alpha: 0.08),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -737,14 +782,14 @@ class _MainScreenState extends State<MainScreen> {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Colors.red,
+                        color: AppTheme.dangerColor,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       _errorMessage!,
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.red),
+                      style: const TextStyle(
+                          fontSize: 12, color: AppTheme.dangerColor),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
@@ -794,7 +839,7 @@ class _MainScreenState extends State<MainScreen> {
                                       .toUpperCase(),
                                   style: const TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey,
+                                    color: AppTheme.textSecondary,
                                   ),
                                 ),
                               ],
@@ -881,7 +926,7 @@ class _MainScreenState extends State<MainScreen> {
                     'Track your symptoms daily to identify triggers and patterns',
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey,
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -912,7 +957,7 @@ class _MainScreenState extends State<MainScreen> {
     if (!_servicesInitialized) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('DHealth'),
+          title: const Text('Siequi'),
         ),
         body: Center(
           child: Column(
@@ -920,7 +965,7 @@ class _MainScreenState extends State<MainScreen> {
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
-              const Text('Initializing DHealth...'),
+              const Text('Initializing Siequi...'),
               if (_initError.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Padding(
@@ -928,7 +973,7 @@ class _MainScreenState extends State<MainScreen> {
                   child: Text(
                     'Error: $_initError',
                     style: const TextStyle(
-                        color: Colors.red, fontSize: 12),
+                        color: AppTheme.dangerColor, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -942,13 +987,13 @@ class _MainScreenState extends State<MainScreen> {
     if (_initError.isNotEmpty) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('DHealth - Error'),
+          title: const Text('Siequi - Error'),
         ),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.error, size: 64, color: Colors.red),
+              const Icon(Icons.error, size: 64, color: AppTheme.dangerColor),
               const SizedBox(height: 16),
               const Text(
                 'Initialization Failed',
@@ -960,7 +1005,7 @@ class _MainScreenState extends State<MainScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   _initError,
-                  style: const TextStyle(color: Colors.red),
+                  style: const TextStyle(color: AppTheme.dangerColor),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -983,7 +1028,13 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('DHealth'),
+        title: Text(
+          'Siequi',
+          style: AppTheme.wordmarkStyle.copyWith(
+            color: Colors.white,
+            fontSize: 20,
+          ),
+        ),
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
@@ -1074,17 +1125,20 @@ class _MainScreenState extends State<MainScreen> {
                     : (_firestoreService == null
                         ? 'Firestore not initialized'
                         : 'Firestore offline'),
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _firebaseConnected
-                        ? Colors.green
-                        : (_firestoreService == null
-                            ? Colors.red
-                            : Colors.orange),
-                  ),
+                // Icon shape (not just color) carries the status, so this
+                // isn't a color-only indicator.
+                child: Icon(
+                  _firebaseConnected
+                      ? Icons.cloud_done
+                      : (_firestoreService == null
+                          ? Icons.cloud_off
+                          : Icons.cloud_queue),
+                  size: 18,
+                  color: _firebaseConnected
+                      ? AppTheme.accentColor
+                      : (_firestoreService == null
+                          ? AppTheme.dangerColor
+                          : AppTheme.warningColor),
                 ),
               ),
             ),
