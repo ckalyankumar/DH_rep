@@ -59,7 +59,7 @@ approves matching content.
 | `entryRef` | map | Identifies the live slot. See below. |
 | `proposedContent` | map | Full `ClinicalEvidence` fields. Immutable after create. |
 | `previousContent` | map \| null | Live content this edit replaces; `null` for a new entry. Immutable after create. |
-| `submittedBy` | string | Person id/name, or an AI session identifier. Immutable. |
+| `submittedBy` | string | Must equal the creator's Firebase Auth email (`signedInEmail()`); rules reject any other value on create. Immutable. |
 | `submittedAt` | timestamp | Must be `request.time` (server timestamp) on create. |
 | `reviewedBy` | string \| null | Null on create. Set on Approve / Reject / Request Changes. |
 | `reviewedAt` | timestamp \| null | Null on create. Server timestamp on decision. |

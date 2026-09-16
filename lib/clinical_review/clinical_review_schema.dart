@@ -13,7 +13,9 @@ class ClinicalReviewSchema {
 
   /// Trimmed `reviewNotes` must be at least this long to Approve. Reject /
   /// Request changes do not require notes. Chosen to block a one-character
-  /// unlock without imposing a word-count rubric.
+  /// unlock without imposing a word-count rubric. Enforced in
+  /// `firestore.rules` `reviewUpdateValid()` (hard) and in the portal
+  /// (UX). Lockstep with `reviewNotesMeetApprovalMinimum()`.
   static const approvalNotesMinLength = 12;
 
   static const Set<String> reviewStatuses = {
