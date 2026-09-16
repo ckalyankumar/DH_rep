@@ -322,14 +322,13 @@ Ranks recommendations based on the patient's individual trigger profile and hist
 
 ### Supported Devices
 
-| Provider | Adapter | Data Retrieved |
-|---------|---------|----------------|
-| Apple Health | `apple_health_adapter.dart` | Sleep, HRV, steps, active minutes |
-| Fitbit | `fitbit_adapter.dart` | Sleep stages, HRV, steps, resting HR |
-| Garmin | `garmin_adapter.dart` | Sleep, HRV, stress score, steps |
-| Oura Ring | `oura_adapter.dart` | Sleep stages, HRV, readiness score |
-| Google Fit | `google_fit_adapter.dart` | Sleep, steps, active minutes |
-| Samsung Health | `samsung_adapter.dart` | Sleep, steps, stress |
+| Provider | Adapter | Data Retrieved | Status |
+|---------|---------|----------------|--------|
+| Apple Health | `apple_health_adapter.dart` | Sleep, HRV, steps, active minutes | Mock (Health Connect/HealthKit integration planned) |
+| Fitbit | `fitbit_adapter.dart` | Sleep stages, HRV, steps, resting HR | **Built and tested against the Google Health API, but parked — not wired into `WearableAdapterFactory` in this release.** Fitbit's own Web API is being retired by Google (Sept 2026); the replacement Google Health API requires a recurring third-party CASA security audit ($500–4,500/yr + engineering prep) that isn't justified pre-revenue with no committed Fitbit-specific demand. `WearableAdapterFactory` currently routes this provider to an inert `DisabledWearableAdapter`. Revisit if a pilot partner's patients are Fitbit-heavy, or the CASA cost becomes justified at scale. |
+| Garmin | `garmin_adapter.dart` | Sleep, HRV, stress score, steps | Mock |
+| Oura Ring | `oura_adapter.dart` | Sleep stages, HRV, readiness score | Mock |
+| Health Connect (Google Fit + Samsung Health) | `health_connect_adapter.dart` | Sleep stages, RMSSD HRV, steps, active minutes (ACTIVITY_INTENSITY), resting HR | **Live on Android** via the `health` plugin. `WearableProvider.googleFit` and `WearableProvider.samsungHealth` both route to this one adapter; the instance is stamped with whichever provider the user selected. |
 
 ### Architecture
 

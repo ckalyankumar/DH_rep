@@ -69,6 +69,7 @@ void callbackDispatcher() {
         return true; // Return true to avoid retries when API unavailable
       }
     }
+
     return true;
   });
 }

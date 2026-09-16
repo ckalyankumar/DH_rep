@@ -10,7 +10,10 @@ import 'package:dhealth/models/sync_audit_record.dart';
 /// - wearableSources: users/{uid}/wearableSources/{provider.name}
 /// - dailyAggregates: users/{uid}/dailyWearableAggregates/{date}
 class WearableRepository {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseFirestore _db;
+
+  WearableRepository({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance;
 
   CollectionReference<Map<String, dynamic>> _sourcesCol(String uid) =>
       _db.collection('users').doc(uid).collection('wearableSources');

@@ -28,7 +28,7 @@ A cross-platform Flutter application that helps patients with **psoriasis** and 
 | Flare Risk Scoring | Deterministic 0–100 risk score with component breakdown and red-flag emergency alerts |
 | Clinical Insights | Pearson/Spearman trigger correlation analysis backed by 50+ PubMed citations |
 | 7–30 Day Predictions | Flare risk forecast with confidence bands |
-| Wearable Integration | Apple Health, Fitbit, Garmin, Oura Ring, Google Fit — auto-prefills daily logs |
+| Wearable Integration | Apple Health, Garmin, Oura Ring, Google Fit — auto-prefills daily logs (Fitbit built and tested, currently parked — see DOCUMENTATION.md §7) |
 | PRO Assessments | POEM (eczema) and DLQI (psoriasis) validated clinical questionnaires |
 | Doctor Portal | Secure read-only patient data sharing, clinical messaging, PDF/FHIR download |
 | PDF Reports | ABDM-compliant multi-page clinical report |
