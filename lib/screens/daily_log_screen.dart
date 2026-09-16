@@ -886,29 +886,6 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                 child: _buildWearableSummaryBanner(),
               ),
 
-            // Test login for Firestore (web / debug)
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  try {
-                    await FirebaseAuth.instance.signInAnonymously();
-                    await _waitForAuthThenSave();
-                  } catch (e) {
-                    debugPrint('Anonymous login from DailyLogScreen failed: $e');
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Login failed: $e'),
-                      ),
-                    );
-                  }
-                },
-                child: const Text('Login Anonymously (for Firestore)'),
-              ),
-            ),
-            const SizedBox(height: 16),
-
             // Mood
             _buildFormSection(
               title: 'How\'s your mood?',
