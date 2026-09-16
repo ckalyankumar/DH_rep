@@ -10,6 +10,7 @@ import 'package:dhealth/widgets/custom_slider_widget.dart';
 import 'package:dhealth/widgets/wearable_prefill_badges.dart';
 import 'package:dhealth/services/daily_log_service.dart';
 import 'package:dhealth/services/firestore_daily_log_service.dart';
+import 'package:dhealth/services/insight_engine.dart';
 import 'package:dhealth/services/firestore_medication_exception_service.dart';
 import 'package:dhealth/services/wearable_checkin_prefill_service.dart';
 import 'package:dhealth/services/wearable_repository.dart';
@@ -43,7 +44,13 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
   int sleepQuality = 3;
   bool sleepDisruption = false;
   String notes = '';
-  int currentStreak = 7;
+
+  /// Consecutive "good days" (itch <= 4) up to today, per
+  /// [InsightEngine.calculateStreaks]. Computed from the same in-memory
+  /// logs the rest of this screen reads — not persisted or cached.
+  int get _currentStreak =>
+      InsightEngine.calculateStreaks(widget.dailyLogService.getLogs())
+          .currentStreak;
 
   bool showAutoSaveMessage = false;
   String autoSaveStatus = 'Changes saved';
@@ -55,6 +62,12 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
   DailyWearableAggregate? _aggregate;
   WearableCheckinPrefill? _prefill;
   bool _showBanner = true;
+
+  /// Today's existing log, if any, as it was when the screen opened —
+  /// used only to decide whether to show the "already checked in today"
+  /// banner. Not re-read after a fresh check-in is started.
+  DailyLog? _todayLogAtOpen;
+  bool _startingFreshCheckIn = false;
 
   bool _sleepQualityOverridden = false;
   bool _sleepDisruptionOverridden = false;
@@ -118,6 +131,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
     final todayLog = widget.dailyLogService.getTodayLog();
     if (todayLog != null) {
       setState(() {
+        _todayLogAtOpen = todayLog;
         selectedMood = todayLog.mood;
         itchIntensity = todayLog.itchIntensity;
         stressLevel = todayLog.stressLevel;
@@ -131,6 +145,40 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
         _treatmentNoteController.text = todayLog.treatmentNoteText ?? '';
       });
     }
+  }
+
+  /// Resets the form to fresh defaults so the patient can record a new
+  /// observation (e.g. a symptom spike this afternoon) instead of editing
+  /// this morning's values in place. Still goes through the same
+  /// [DailyLogService.createAndAdd] → [DailyLogService.addLog] path as any
+  /// other save, which already folds same-day entries via
+  /// [DailyLog.aggregateWithSameDay] (max itch/lesion severity when the
+  /// entries are ≥2h apart, latest value otherwise).
+  ///
+  /// TODO(multi-entry UI): There is no "view intraday entries" drill-down
+  /// here because raw per-check-in entries are folded away before the
+  /// Firestore write today — only the merged result for the day is ever
+  /// persisted (see 2025 UI/UX overhaul investigation, main_screen.dart
+  /// risk-band-fix conversation). Needs a subcollection schema change
+  /// (e.g. users/{uid}/dailyLogs/{date}/checkins/{id}) before a drill-down
+  /// listing today's individual check-ins can be built.
+  void _startFreshCheckIn() {
+    setState(() {
+      _startingFreshCheckIn = true;
+      selectedMood = 3;
+      itchIntensity = 5;
+      stressLevel = 6;
+      lesionSeverity = 'none';
+      affectedAreas = {};
+      sleepQuality = 3;
+      sleepDisruption = false;
+      notes = '';
+      _notesController.text = '';
+      _treatmentNoteAction = null;
+      _treatmentNoteController.text = '';
+      _selectedTriggerIds.clear();
+      _otherTriggerText = '';
+    });
   }
 
   Future<void> _recordMedicationExceptionIfNeeded({
@@ -494,6 +542,67 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
     return '${provider[0].toUpperCase()}${provider.substring(1)}';
   }
 
+  /// Surfaces the existing same-day fold behavior ([DailyLog.aggregateWithSameDay])
+  /// so it's visible rather than silent: editing here updates today's entry;
+  /// starting fresh records a separate observation that gets folded in
+  /// (max itch/lesion severity if ≥2h apart, latest value otherwise).
+  Widget _buildAlreadyCheckedInBanner() {
+    final log = _todayLogAtOpen!;
+    final recordedAt = DailyLog.recordedAt(log);
+    return Card(
+      color: AppTheme.disclaimerBg,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppSpacing.md),
+        side: const BorderSide(color: AppTheme.disclaimerBorder, width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline, color: AppTheme.disclaimerText, size: 20),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'You already checked in today at ${_timeAgo(recordedAt)}.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.disclaimerText,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  const Text(
+                    'The form below is pre-filled with that entry. Saving updates '
+                    "it — itch and lesion severity keep whichever reading is higher "
+                    'if this is a separate check-in.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.disclaimerText),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  TextButton.icon(
+                    onPressed: _startFreshCheckIn,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Start a new check-in'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.disclaimerText,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 0),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildWearableSummaryBanner() {
     final prefill = _prefill!;
     final providerName = _capitalizeProvider(prefill.provider);
@@ -678,10 +787,10 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                           style: TextStyle(color: AppTheme.textPrimaryColor),
                         ),
                         Text(
-                          '$currentStreak days',
+                          '$_currentStreak days',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: Colors.green,
+                            color: AppTheme.accentColor,
                           ),
                         ),
                       ],
@@ -691,6 +800,12 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
               ),
             ),
             const SizedBox(height: 24),
+
+            if (_todayLogAtOpen != null && !_startingFreshCheckIn)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                child: _buildAlreadyCheckedInBanner(),
+              ),
 
             if (_prefill != null &&
                 _prefill!.prefillCount > 0 &&
@@ -1195,18 +1310,19 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: autoSaveStatus.contains('Saved')
-                        ? Colors.green[100]
-                        : autoSaveStatus.contains('Error')
-                            ? Colors.red[100]
-                            : Colors.blue[100],
+                    color: (autoSaveStatus.contains('Saved')
+                            ? AppTheme.accentColor
+                            : autoSaveStatus.contains('Error')
+                                ? AppTheme.dangerColor
+                                : AppTheme.primary)
+                        .withValues(alpha: 0.12),
                     border: Border(
                       bottom: BorderSide(
                         color: autoSaveStatus.contains('Saved')
-                            ? Colors.green
+                            ? AppTheme.accentColor
                             : autoSaveStatus.contains('Error')
-                                ? Colors.red
-                                : Colors.blue,
+                                ? AppTheme.dangerColor
+                                : AppTheme.primary,
                         width: 2,
                       ),
                     ),
@@ -1219,10 +1335,10 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: autoSaveStatus.contains('Saved')
-                            ? Colors.green[800]
+                            ? AppTheme.accentColor
                             : autoSaveStatus.contains('Error')
-                                ? Colors.red[800]
-                                : Colors.blue[800],
+                                ? AppTheme.dangerColor
+                                : AppTheme.primary,
                       ),
                     ),
                   ),
