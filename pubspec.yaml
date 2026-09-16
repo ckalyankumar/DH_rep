@@ -48,6 +48,9 @@ dependencies:
   workmanager: ^0.6.0
   shared_preferences: ^2.2.2
 
+  # Health Connect (Android) / HealthKit (iOS)
+  health: ^13.0.0
+
   # PDF & Reports
   pdf: ^3.11.1
   path_provider: ^2.1.0
@@ -58,6 +61,13 @@ dependencies:
   # Environment
   flutter_dotenv: ^6.0.0
   package_info_plus: ^8.0.0
+
+  # Wearable OAuth2 (Google Health API)
+  flutter_web_auth_2: ^4.1.0
+
+  # Wearable token encryption-at-rest
+  cryptography: ^2.7.0
+  flutter_secure_storage: ^9.2.2
 
   crypto: any
   uuid: any

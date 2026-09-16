@@ -19,13 +19,18 @@ enum WearableScope {
 }
 
 /// OAuth-linked wearable source. Stored at users/{uid}/wearableSources/{provider.name}
-/// Note: encryptedOauthToken is stored encrypted; never log this field.
+/// Note: encryptedOauthToken/encryptedRefreshToken are stored encrypted at
+/// rest (AES-256-GCM via WearableTokenCipher, key in the platform
+/// Keychain/Keystore) — never log these fields. WearableSyncService is the
+/// only caller that encrypts/decrypts; this model always holds ciphertext.
 class WearableSource {
   final String id;
   final String uid;
   final WearableProvider provider;
   final List<WearableScope> scopes;
   final String encryptedOauthToken;
+  final String encryptedRefreshToken;
+  final DateTime? tokenExpiresAt;
   final DateTime lastSyncedAt;
   final bool isActive;
   final DateTime consentGrantedAt;
@@ -36,6 +41,8 @@ class WearableSource {
     required this.provider,
     required this.scopes,
     required this.encryptedOauthToken,
+    this.encryptedRefreshToken = '',
+    this.tokenExpiresAt,
     required this.lastSyncedAt,
     required this.isActive,
     required this.consentGrantedAt,
@@ -47,6 +54,8 @@ class WearableSource {
       'provider': provider.name,
       'scopes': scopes.map((s) => s.name).toList(),
       'encryptedOauthToken': encryptedOauthToken,
+      if (encryptedRefreshToken.isNotEmpty) 'encryptedRefreshToken': encryptedRefreshToken,
+      if (tokenExpiresAt != null) 'tokenExpiresAt': tokenExpiresAt!.toIso8601String(),
       'lastSyncedAt': lastSyncedAt.toIso8601String(),
       'isActive': isActive,
       'consentGrantedAt': consentGrantedAt.toIso8601String(),
@@ -68,6 +77,10 @@ class WearableSource {
               .toList() ??
           [],
       encryptedOauthToken: data['encryptedOauthToken'] as String? ?? '',
+      encryptedRefreshToken: data['encryptedRefreshToken'] as String? ?? '',
+      tokenExpiresAt: data['tokenExpiresAt'] != null
+          ? _parseDateTime(data['tokenExpiresAt'])
+          : null,
       lastSyncedAt: _parseDateTime(data['lastSyncedAt']),
       isActive: data['isActive'] as bool? ?? true,
       consentGrantedAt: _parseDateTime(data['consentGrantedAt']),
@@ -87,6 +100,8 @@ class WearableSource {
     WearableProvider? provider,
     List<WearableScope>? scopes,
     String? encryptedOauthToken,
+    String? encryptedRefreshToken,
+    DateTime? tokenExpiresAt,
     DateTime? lastSyncedAt,
     bool? isActive,
     DateTime? consentGrantedAt,
@@ -97,6 +112,8 @@ class WearableSource {
       provider: provider ?? this.provider,
       scopes: scopes ?? this.scopes,
       encryptedOauthToken: encryptedOauthToken ?? this.encryptedOauthToken,
+      encryptedRefreshToken: encryptedRefreshToken ?? this.encryptedRefreshToken,
+      tokenExpiresAt: tokenExpiresAt ?? this.tokenExpiresAt,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
       isActive: isActive ?? this.isActive,
       consentGrantedAt: consentGrantedAt ?? this.consentGrantedAt,

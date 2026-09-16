@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:dhealth/models/wearable_source.dart';
 import 'package:dhealth/models/daily_wearable_aggregate.dart';
+import 'package:dhealth/models/oauth_token_set.dart';
 import 'package:dhealth/services/wearables/wearable_adapter.dart';
 
 class SamsungAdapter implements WearableAdapter {
@@ -22,9 +23,9 @@ class SamsungAdapter implements WearableAdapter {
       'https://account.samsung.com/accounts/v1/oauth2/authorize';
 
   @override
-  Future<String> authenticate() async {
+  Future<OAuthTokenSet> authenticate() async {
     debugPrint('TODO: implement real OAuth for samsungHealth');
-    return 'mock_token_${provider.name}';
+    return OAuthTokenSet(accessToken: 'mock_token_${provider.name}');
   }
 
   @override
@@ -49,7 +50,7 @@ class SamsungAdapter implements WearableAdapter {
   }
 
   @override
-  Future<String> refreshToken(String existingToken) async {
+  Future<OAuthTokenSet> refreshToken(OAuthTokenSet existingToken) async {
     return existingToken;
   }
 }
