@@ -70,6 +70,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.widgetWithText(AppBar, 'Recommendations'), findsOneWidget);
+      // TODO(test-debt): fails as of 826c485 ("Gate patient clinical
+      // interpretation behind remote Firestore flags") — FeatureFlagsScope /
+      // showRecommendations now defaults to false, so the Self-Care tab is
+      // hidden by default. Update this assertion (or seed flags to enable
+      // it) rather than deleting the coverage.
       expect(find.text('Self-Care'), findsOneWidget);
 
       await tester.tap(find.text('Home'));

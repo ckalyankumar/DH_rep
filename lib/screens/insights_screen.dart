@@ -88,7 +88,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('💡 Clinical Insights & Evidence'),
+        title: const Text('Clinical Insights & Evidence'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

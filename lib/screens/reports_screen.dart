@@ -132,7 +132,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Scaffold _buildLoadingScaffold() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📊 Reports'),
+        title: const Text('Reports'),
       ),
       body: const Center(child: CircularProgressIndicator()),
     );
@@ -141,13 +141,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Scaffold _buildNoAuthScaffold() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📊 Reports'),
+        title: const Text('Reports'),
       ),
       body: const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Sign in to view your reports.\nYour data is stored at /users/{your id}/reports.',
+            'Sign in to view your reports.',
             style: TextStyle(fontSize: 14, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
@@ -159,7 +159,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Scaffold _buildNoFirestoreScaffold() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📊 Reports'),
+        title: const Text('Reports'),
       ),
       body: const Center(
         child: Text(
@@ -175,7 +175,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       length: 3,
       child: Scaffold(
       appBar: AppBar(
-        title: const Text('📊 Reports'),
+        title: const Text('Reports'),
         actions: [
           IconButton(
             icon: const Icon(Icons.share),

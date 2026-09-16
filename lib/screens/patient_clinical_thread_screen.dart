@@ -173,19 +173,19 @@ class _PatientClinicalThreadScreenState
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blue[50],
-        border: Border.all(color: Colors.blue),
+        color: Colors.amber[50],
+        border: Border.all(color: Colors.amber.shade700),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+          Icon(Icons.info_outline, color: Colors.amber[900], size: 20),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'For care coordination only. Ask clarifying questions here. Not for emergencies.',
-              style: TextStyle(fontSize: 12, color: Colors.blue[900]),
+              style: TextStyle(fontSize: 12, color: Colors.amber[900]),
             ),
           ),
         ],
