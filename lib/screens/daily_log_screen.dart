@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -80,18 +83,41 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
 
   String? _treatmentNoteAction;
 
+  Timer? _autoSaveTimer;
+  Timer? _statusHideTimer;
+  _FormSnapshot? _baseline;
+  bool _autosaveListenersAttached = false;
+
   @override
   void initState() {
     super.initState();
     _triggerCategories = defaultTriggerTaxonomy(widget.condition);
-    _notesController.addListener(_onAnyFieldChange);
-    _treatmentNoteController.addListener(_onAnyFieldChange);
+    // Prefill controllers before attaching autosave listeners so assigning
+    // `.text` in [_loadTodayLog] cannot schedule a write on open.
     _loadTodayLog();
     _computeTriggerPriorUsage();
+    _baseline = _captureForm();
     _loadPrefill();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _baseline = _captureForm();
+      _attachAutosaveListeners();
       _waitForAuthThenSave();
     });
+  }
+
+  void _attachAutosaveListeners() {
+    if (_autosaveListenersAttached) return;
+    _notesController.addListener(_onNotesControllerTick);
+    _treatmentNoteController.addListener(_onTreatmentNoteControllerTick);
+    _autosaveListenersAttached = true;
+  }
+
+  void _detachAutosaveListeners() {
+    if (!_autosaveListenersAttached) return;
+    _notesController.removeListener(_onNotesControllerTick);
+    _treatmentNoteController.removeListener(_onTreatmentNoteControllerTick);
+    _autosaveListenersAttached = false;
   }
 
   Future<void> _loadPrefill() async {
@@ -102,6 +128,7 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
       _aggregate = await WearableRepository().getAggregate(uid, today);
       _prefill = WearableCheckinPrefillService().prefill(_aggregate);
       if (_prefill != null && mounted) {
+        final wasDirty = _isDirty;
         if (_prefill!.hasSleepQuality) {
           sleepQuality = _prefill!.sleepQuality!;
         }
@@ -112,6 +139,10 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
           stressLevel = _prefill!.stress!;
         }
         setState(() {});
+        // Wearable prefill is not a user edit; don't autosave it on open.
+        if (!wasDirty) {
+          _baseline = _captureForm();
+        }
       }
     } catch (_) {
       _prefill = null;
@@ -120,9 +151,10 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
 
   @override
   void dispose() {
-    _notesController.removeListener(_onAnyFieldChange);
+    _autoSaveTimer?.cancel();
+    _statusHideTimer?.cancel();
+    _detachAutosaveListeners();
     _notesController.dispose();
-    _treatmentNoteController.removeListener(_onAnyFieldChange);
     _treatmentNoteController.dispose();
     super.dispose();
   }
@@ -163,6 +195,9 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
   /// (e.g. users/{uid}/dailyLogs/{date}/checkins/{id}) before a drill-down
   /// listing today's individual check-ins can be built.
   void _startFreshCheckIn() {
+    _autoSaveTimer?.cancel();
+    _statusHideTimer?.cancel();
+    _detachAutosaveListeners();
     setState(() {
       _startingFreshCheckIn = true;
       selectedMood = 3;
@@ -179,6 +214,10 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
       _selectedTriggerIds.clear();
       _otherTriggerText = '';
     });
+    // Resetting the form is not itself a save; baseline to the new defaults
+    // so controller assignment cannot write unchanged/default data.
+    _baseline = _captureForm();
+    _attachAutosaveListeners();
   }
 
   Future<void> _recordMedicationExceptionIfNeeded({
@@ -269,14 +308,46 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
     _hasHighTriggerPriorUsage = withTriggers >= 3;
   }
 
+  void _onNotesControllerTick() => _onAnyFieldChange();
+
+  void _onTreatmentNoteControllerTick() => _onAnyFieldChange();
+
+  bool get _isDirty =>
+      _baseline == null || _captureForm() != _baseline;
+
+  _FormSnapshot _captureForm() {
+    final triggerIds = _selectedTriggerIds.toList()..sort();
+    final areas = affectedAreas.toList()..sort();
+    return _FormSnapshot(
+      mood: selectedMood,
+      itchIntensity: itchIntensity,
+      stressLevel: stressLevel,
+      lesionSeverity: lesionSeverity,
+      affectedAreas: areas,
+      sleepQuality: sleepQuality,
+      sleepDisruption: sleepDisruption,
+      notes: _notesController.text.trim(),
+      triggerIds: triggerIds,
+      otherTriggerText: _otherTriggerText.trim(),
+      treatmentNoteAction: _treatmentNoteAction,
+      treatmentNoteText: _treatmentNoteController.text.trim(),
+      sleepQualityWasOverridden: _sleepQualityOverridden,
+      sleepDisruptionWasOverridden: _sleepDisruptionOverridden,
+      stressWasOverridden: _stressOverridden,
+    );
+  }
+
   void _onAnyFieldChange() {
-    Future.delayed(const Duration(milliseconds: 1500), () {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
       _autoSave();
     });
   }
 
   Future<void> _autoSave() async {
     if (isSaving) return;
+    if (!_isDirty) return;
 
     setState(() {
       isSaving = true;
@@ -334,13 +405,15 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
           ? 'Check-in saved · ${_prefill!.prefillCount} field(s) from ${_capitalizeProvider(_prefill!.provider)}'
           : null;
       await _saveLogToCloudSafe(newLog, successMessage: successMsg);
+      _baseline = _captureForm();
       // cloud sync attempted
 
       setState(() {
         autoSaveStatus = 'Saved';
       });
 
-      Future.delayed(const Duration(seconds: 2), () {
+      _statusHideTimer?.cancel();
+      _statusHideTimer = Timer(const Duration(seconds: 2), () {
         if (mounted) {
           setState(() => showAutoSaveMessage = false);
         }
@@ -358,16 +431,14 @@ class _DailyLogScreenState extends State<DailyLogScreen> {
   }
 
   Future<void> _waitForAuthThenSave() async {
+    if (!_isDirty) return;
     final current = FirebaseAuth.instance.currentUser;
     if (current != null) {
       await current.reload();
     }
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final log = widget.dailyLogService.getTodayLog();
-      if (log != null) {
-        await _saveLogToCloudSafe(log);
-      }
+      await _autoSave();
     }
   }
 
@@ -1370,4 +1441,80 @@ class _TreatmentChip extends StatelessWidget {
       onSelected: (_) => onTap(),
     );
   }
+}
+
+/// Captured check-in form state for dirty-checking autosave.
+class _FormSnapshot {
+  const _FormSnapshot({
+    required this.mood,
+    required this.itchIntensity,
+    required this.stressLevel,
+    required this.lesionSeverity,
+    required this.affectedAreas,
+    required this.sleepQuality,
+    required this.sleepDisruption,
+    required this.notes,
+    required this.triggerIds,
+    required this.otherTriggerText,
+    required this.treatmentNoteAction,
+    required this.treatmentNoteText,
+    required this.sleepQualityWasOverridden,
+    required this.sleepDisruptionWasOverridden,
+    required this.stressWasOverridden,
+  });
+
+  final int mood;
+  final int itchIntensity;
+  final int stressLevel;
+  final String lesionSeverity;
+  final List<String> affectedAreas;
+  final int sleepQuality;
+  final bool sleepDisruption;
+  final String notes;
+  final List<String> triggerIds;
+  final String otherTriggerText;
+  final String? treatmentNoteAction;
+  final String treatmentNoteText;
+  final bool sleepQualityWasOverridden;
+  final bool sleepDisruptionWasOverridden;
+  final bool stressWasOverridden;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _FormSnapshot &&
+        mood == other.mood &&
+        itchIntensity == other.itchIntensity &&
+        stressLevel == other.stressLevel &&
+        lesionSeverity == other.lesionSeverity &&
+        listEquals(affectedAreas, other.affectedAreas) &&
+        sleepQuality == other.sleepQuality &&
+        sleepDisruption == other.sleepDisruption &&
+        notes == other.notes &&
+        listEquals(triggerIds, other.triggerIds) &&
+        otherTriggerText == other.otherTriggerText &&
+        treatmentNoteAction == other.treatmentNoteAction &&
+        treatmentNoteText == other.treatmentNoteText &&
+        sleepQualityWasOverridden == other.sleepQualityWasOverridden &&
+        sleepDisruptionWasOverridden == other.sleepDisruptionWasOverridden &&
+        stressWasOverridden == other.stressWasOverridden;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        mood,
+        itchIntensity,
+        stressLevel,
+        lesionSeverity,
+        Object.hashAll(affectedAreas),
+        sleepQuality,
+        sleepDisruption,
+        notes,
+        Object.hashAll(triggerIds),
+        otherTriggerText,
+        treatmentNoteAction,
+        treatmentNoteText,
+        sleepQualityWasOverridden,
+        sleepDisruptionWasOverridden,
+        stressWasOverridden,
+      );
 }
