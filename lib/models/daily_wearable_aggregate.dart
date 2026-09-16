@@ -13,6 +13,10 @@ class DailyWearableAggregate {
   final int? awakenings;
   final int? sleepScore; // 0–100 if provider supplies one
   final double? hrvNightly; // ms
+  /// Which HRV statistic [hrvNightly] holds. Health Connect on Android
+  /// only exposes RMSSD (`"rmssd"`); iOS HealthKit uses SDNN. Null when
+  /// [hrvNightly] is null or the provider does not declare a type.
+  final String? hrvMeasurementType;
   final int? hrvReadiness; // 0–100 Oura-style
   final int? restingHeartRate; // bpm
   final int? steps;
@@ -30,6 +34,7 @@ class DailyWearableAggregate {
     this.awakenings,
     this.sleepScore,
     this.hrvNightly,
+    this.hrvMeasurementType,
     this.hrvReadiness,
     this.restingHeartRate,
     this.steps,
@@ -52,6 +57,7 @@ class DailyWearableAggregate {
       if (awakenings != null) 'awakenings': awakenings,
       if (sleepScore != null) 'sleepScore': sleepScore,
       if (hrvNightly != null) 'hrvNightly': hrvNightly,
+      if (hrvMeasurementType != null) 'hrvMeasurementType': hrvMeasurementType,
       if (hrvReadiness != null) 'hrvReadiness': hrvReadiness,
       if (restingHeartRate != null) 'restingHeartRate': restingHeartRate,
       if (steps != null) 'steps': steps,
@@ -74,6 +80,7 @@ class DailyWearableAggregate {
       awakenings: data['awakenings'] as int?,
       sleepScore: data['sleepScore'] as int?,
       hrvNightly: (data['hrvNightly'] as num?)?.toDouble(),
+      hrvMeasurementType: data['hrvMeasurementType'] as String?,
       hrvReadiness: data['hrvReadiness'] as int?,
       restingHeartRate: data['restingHeartRate'] as int?,
       steps: data['steps'] as int?,
@@ -100,6 +107,7 @@ class DailyWearableAggregate {
     int? awakenings,
     int? sleepScore,
     double? hrvNightly,
+    String? hrvMeasurementType,
     int? hrvReadiness,
     int? restingHeartRate,
     int? steps,
@@ -117,6 +125,7 @@ class DailyWearableAggregate {
       awakenings: awakenings ?? this.awakenings,
       sleepScore: sleepScore ?? this.sleepScore,
       hrvNightly: hrvNightly ?? this.hrvNightly,
+      hrvMeasurementType: hrvMeasurementType ?? this.hrvMeasurementType,
       hrvReadiness: hrvReadiness ?? this.hrvReadiness,
       restingHeartRate: restingHeartRate ?? this.restingHeartRate,
       steps: steps ?? this.steps,
