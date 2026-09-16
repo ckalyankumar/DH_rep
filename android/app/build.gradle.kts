@@ -28,10 +28,18 @@ android {
         applicationId = "com.example.dhealth"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Overridden above Flutter's default (24): the `health` plugin's
+        // Android library requires minSdk 26, enforced at manifest-merge
+        // time. This drops support for Android 7.1 and below (API 25-).
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Redirect scheme for flutter_web_auth_2 (Google OAuth2 callback
+        // for the Google Health API — backs the "Fitbit" connection slot).
+        // Must match the scheme in GOOGLE_HEALTH_REDIRECT_URI in .env.
+        manifestPlaceholders["appAuthRedirectScheme"] = "dhealth"
     }
 
     buildTypes {

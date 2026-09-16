@@ -4,13 +4,19 @@ import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileOutputStream
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity (not FlutterActivity) is required by the
+// `health` plugin's Android implementation: its permission-request flow
+// casts `activity as ComponentActivity` to call `registerForActivityResult`,
+// which throws a ClassCastException against a plain FlutterActivity. See
+// the health_connect_adapter.dart planning conversation for the source
+// trail (plugin's HealthPlugin.kt + its own README's "Android 14" section).
+class MainActivity : FlutterFragmentActivity() {
     private val downloadsChannel = "dhealth/downloads"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
