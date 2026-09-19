@@ -72,8 +72,6 @@ const _defaultProjectId = 'dhealth-fb17e';
 // web build.
 const _defaultApiKey = 'AIzaSyCeNkq4Liulj7hsDTq1Bpn6U-FxBKXopOA';
 
-const _submittedBy = 'Citation audit (Claude Code, 2026-09-09 review)';
-
 Map<String, dynamic> _content({
   required String title,
   required String authors,
@@ -1318,10 +1316,17 @@ Future<void> main() async {
       'entryRef': _entryRef(seed),
       'proposedContent': seed.proposedContent,
       'previousContent': seed.previousContent,
-      'submittedBy': _submittedBy,
+      // firestore.rules (2026-09-14) requires submittedBy to equal the
+      // signed-in account's Auth email exactly — it can no longer be a
+      // free-text label. The "who ran this" context lives in reviewNotes
+      // instead.
+      'submittedBy': email,
       'reviewedBy': null,
       'reviewedAt': null,
-      'reviewNotes': seed.reviewNotes,
+      'reviewNotes':
+          'Filed by citation audit script (submitted via $email, '
+          '${DateTime.now().toIso8601String().substring(0, 10)}). '
+          '${seed.reviewNotes}',
       'gradeLevel': null,
     };
 

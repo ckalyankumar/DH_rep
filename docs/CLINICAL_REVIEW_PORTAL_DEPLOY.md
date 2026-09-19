@@ -132,14 +132,21 @@ without this step he'd log in and see nothing to review.
   exists) and the handful with more than one valid real paper to choose
   between.
 
-Run it once you (or he) have a Firebase Auth account in this project — any
-signed-in user can create a `pending` review, so this does not require
-`clinicalReviewer`/`clinicalAdmin`:
+Run it once you have a Firebase Auth account in this project — any
+signed-in user with an Auth email can create a `pending` review, so this
+does not require `clinicalReviewer`/`clinicalAdmin`:
 
 ```bash
 PORTAL_ADMIN_EMAIL=you@example.com PORTAL_ADMIN_PASSWORD=your-password \
   dart run tool/submit_citation_audit_reviews.dart
 ```
+
+**Run this as yourself (or any account other than the reviewer's), not as
+the dermatologist.** `firestore.rules` (updated 2026-09-14) now requires
+`submittedBy` to exactly equal the signed-in account's Auth email, and
+blocks approving a review where `reviewedBy == submittedBy` (no
+self-approval). If you run this script signed in as the dermatologist's own
+account, he will be unable to approve any of the 29 reviews it creates.
 
 Expected output: `Done: 29 submitted, 0 failed, out of 29.` If any fail,
 the script prints the Firestore error for that entry — the most likely cause
