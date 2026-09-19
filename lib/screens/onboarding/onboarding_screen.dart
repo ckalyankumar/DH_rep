@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/utils/spacing.dart';
+import 'package:dhealth/widgets/siequi_wordmark.dart';
 import 'package:dhealth/utils/abha_id_formatter.dart';
 import 'package:dhealth/services/onboarding_prefs.dart';
 import 'package:dhealth/services/notification_service.dart';
@@ -233,22 +234,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ),
           const SizedBox(height: AppSpacing.xxxl),
-          Center(
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: AppTheme.primary,
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                child: Text(
-                  '🌿',
-                  style: TextStyle(fontSize: 48),
-                ),
-              ),
-            ),
-          ),
+          const Center(child: SiequiWordmark()),
         ],
       ),
     );

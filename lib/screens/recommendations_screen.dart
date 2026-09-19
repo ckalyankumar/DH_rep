@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:dhealth/utils/theme.dart';
 import 'package:dhealth/models/recommendation_model.dart';
 import 'package:dhealth/models/clinical_evidence_models.dart';
 import 'package:dhealth/widgets/clinical_note_widget.dart'
@@ -241,7 +242,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
         style: const TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF2c3e50),
+          color: AppTheme.ink,
         ),
       ),
       const SizedBox(height: 8),
@@ -325,7 +326,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF2c3e50),
+              color: AppTheme.ink,
             ),
           ),
           const SizedBox(height: 12),
@@ -371,7 +372,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF2c3e50),
+              color: AppTheme.ink,
             ),
           ),
           const SizedBox(height: 12),
@@ -386,7 +387,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF2c3e50),
+                      color: AppTheme.ink,
                     ),
                   ),
                   Text(
@@ -469,7 +470,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF2c3e50),
+                              color: AppTheme.ink,
                             ),
                           ),
                         ),
@@ -643,7 +644,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF2c3e50),
+            color: AppTheme.ink,
           ),
         ),
         if (content != null) ...[
@@ -721,7 +722,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF2c3e50),
+              color: AppTheme.ink,
             ),
           ),
           const SizedBox(height: 8),

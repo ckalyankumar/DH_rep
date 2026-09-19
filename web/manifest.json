@@ -3,9 +3,9 @@
     "short_name": "Siequi",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#C9704F",
+    "theme_color": "#C9704F",
+    "description": "Siequi — a companion for psoriasis and eczema",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

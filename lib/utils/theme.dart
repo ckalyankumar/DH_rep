@@ -32,7 +32,9 @@ class AppTheme {
 
   static const primaryColor = primary;
 
-  static const textPrimaryColor = Color(0xFF2C3E50);
+  // Ink — primary text color per the finalized Siequi design system.
+  static const ink = Color(0xFF2B2118);
+  static const textPrimaryColor = ink;
   static const textSecondaryColor = Color(0xFF6C757D);
   static const textSecondary = Color(0xFF6C757D);
   static const textMuted = Color(0xFF9CA3AF);
@@ -65,7 +67,7 @@ class AppTheme {
     secondary: secondary,
     onSecondary: Color(0xFFFFFFFF),
     surface: Color(0xFFFFFFFF),
-    onSurface: Color(0xFF2C3E50),
+    onSurface: ink,
     error: riskUrgent,
     onError: Color(0xFFFFFFFF),
     outline: borderColor,
