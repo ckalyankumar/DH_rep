@@ -1,7 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:dhealth/clinical_review/clinical_evidence_catalog.dart';
 import 'package:dhealth/clinical_review/clinical_evidence_compliance.dart';
 import 'package:dhealth/clinical_review/clinical_review_schema.dart';
+import 'package:dhealth/clinical_review/clinical_roles.dart';
+import 'package:dhealth/clinical_review/reviewer_access_request.dart';
+
+const _reviewerRequestsCollection = 'reviewerAccessRequests';
 
 /// Portal data access via the **Firestore SDK + Firebase Auth ID token**.
 ///
@@ -10,16 +15,23 @@ import 'package:dhealth/clinical_review/clinical_review_schema.dart';
 /// `firestore.rules`. Every read and write here goes through
 /// [FirebaseFirestore] so `clinicalReviewer` / `clinicalAdmin` rules apply.
 class ClinicalReviewPortalService {
-  ClinicalReviewPortalService({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  ClinicalReviewPortalService({
+    FirebaseFirestore? firestore,
+    FirebaseFunctions? functions,
+  })  : _db = firestore ?? FirebaseFirestore.instance,
+        _functions = functions ?? FirebaseFunctions.instance;
 
   final FirebaseFirestore _db;
+  final FirebaseFunctions _functions;
 
   CollectionReference<Map<String, dynamic>> get _reviews =>
       _db.collection(ClinicalReviewSchema.reviewsCollection);
 
   CollectionReference<Map<String, dynamic>> get _actions =>
       _db.collection(ClinicalReviewSchema.emergencyActionsCollection);
+
+  CollectionReference<Map<String, dynamic>> get _reviewerRequests =>
+      _db.collection(_reviewerRequestsCollection);
 
   Stream<String?> roleForUser(String uid) {
     return _db.collection('users').doc(uid).snapshots().map((snap) {
@@ -178,6 +190,78 @@ class ClinicalReviewPortalService {
       for (final site in liveSites)
         if (!failing.contains(site.displayRef)) site,
     ];
+  }
+
+  // ── Reviewer access requests + role management ──────────────────────
+  // Reads go straight through Firestore (client rules allow an admin to
+  // read all requests, and to read `users` — see firestore.rules). The
+  // three writes that matter (approve / reject / revoke) always go
+  // through Cloud Functions, because granting or revoking a protected
+  // role is blocked for the client at the rules layer by design.
+
+  /// All reviewer-access requests, newest first. Requires clinicalAdmin
+  /// (client-side; the rule also enforces it server-side).
+  Stream<List<ReviewerAccessRequestDoc>> reviewerAccessRequests() {
+    return _reviewerRequests.snapshots().map((snap) {
+      final rows = [
+        for (final doc in snap.docs)
+          ReviewerAccessRequestDoc.fromMap(doc.id, doc.data()),
+      ];
+      rows.sort((a, b) {
+        final at = b.requestedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bt = a.requestedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return at.compareTo(bt);
+      });
+      return rows;
+    });
+  }
+
+  /// Every `users/{uid}` doc whose `profile.role` is clinicalReviewer or
+  /// clinicalAdmin. Requires being able to read the `users` collection at
+  /// this scale — fine for a small pilot roster; revisit with a
+  /// dedicated index/collection if the roster grows large.
+  Stream<List<ClinicalStaffUser>> clinicalStaffUsers() {
+    return _db.collection('users').snapshots().map((snap) {
+      final rows = <ClinicalStaffUser>[];
+      for (final doc in snap.docs) {
+        final profile = doc.data()['profile'];
+        final role = profile is Map ? profile['role'] : null;
+        if (role is String && ClinicalRoles.isStaff(role)) {
+          rows.add(ClinicalStaffUser(
+            uid: doc.id,
+            role: ClinicalRoles.canonicalize(role) ?? role,
+            email: (profile is Map ? profile['email'] : null) as String?,
+          ));
+        }
+      }
+      rows.sort((a, b) => a.role.compareTo(b.role));
+      return rows;
+    });
+  }
+
+  /// Grants clinicalReviewer to the requester behind [requestId]. Calls
+  /// the `approveClinicalReviewer` Cloud Function — the only path that can
+  /// write a protected role (see firestore.rules' comment on
+  /// roleUpdateAllowed()).
+  Future<void> approveReviewerRequest(String requestId) async {
+    final callable = _functions.httpsCallable('approveClinicalReviewer');
+    await callable.call<Map<String, dynamic>>({'requestId': requestId});
+  }
+
+  /// Declines a pending request without granting anything.
+  Future<void> rejectReviewerRequest(String requestId, {String? note}) async {
+    final callable = _functions.httpsCallable('rejectReviewerAccess');
+    await callable.call<Map<String, dynamic>>({
+      'requestId': requestId,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  /// Demotes an existing clinicalReviewer back to `patient`. Cannot revoke
+  /// a clinicalAdmin from here (see functions/src/index.ts).
+  Future<void> revokeClinicalReviewer(String uid) async {
+    final callable = _functions.httpsCallable('revokeClinicalReviewer');
+    await callable.call<Map<String, dynamic>>({'uid': uid});
   }
 
   static int _bySubmittedDesc(

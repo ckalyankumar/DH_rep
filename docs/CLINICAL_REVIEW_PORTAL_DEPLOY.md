@@ -174,6 +174,58 @@ that entry as compliant instead of `never-reviewed`. That hand-copy step is
 intentional friction — it's the last point where a human can catch a mistake
 before it reaches the dart source the app actually ships.
 
+## 8. Admin dashboard + reviewer approval (Dashboard / Reviewers tabs)
+
+The portal now has two more tabs, visible only to `clinicalAdmin`:
+
+- **Dashboard** — counts of pending/approved/rejected/needs-changes across
+  every submitted review, a breakdown by reviewer, and a feed of the most
+  recent decisions. Read-only.
+- **Reviewers** — pending "request reviewer access" requests (with
+  Approve/Reject), the current roster of `clinicalReviewer`/`clinicalAdmin`
+  accounts, and a way to revoke a `clinicalReviewer`.
+
+Granting `clinicalReviewer` is still blocked at the Firestore-rules layer
+for every client, including this portal's own UI — `firestore.rules`
+explicitly allows only `patient`↔`doctor` role changes from the app (see
+`roleUpdateAllowed()`). Approving a request in the Reviewers tab works
+by calling a **Cloud Function** (`approveClinicalReviewer`, in
+`functions/`) that uses the Admin SDK to make that one write server-side.
+That function needs to be deployed once before the Reviewers tab's Approve
+button will work:
+
+```bash
+cd functions
+npm install
+cd ..
+firebase deploy --only functions --project dhealth-fb17e
+```
+
+This deploys four callables: `requestReviewerAccess` (any signed-in user —
+this is what the "Request reviewer access" button on the no-access screen
+calls), `approveClinicalReviewer` / `rejectReviewerAccess` /
+`revokeClinicalReviewer` (all `clinicalAdmin`-only, enforced inside the
+function itself by reading the caller's `users/{uid}.profile.role`).
+
+**Re-deploy `firestore.rules` too** if you haven't already picked up the
+2026-09-21 change (adds the `reviewerAccessRequests` collection and lets
+`clinicalAdmin` read any `users/{uid}` doc):
+
+```bash
+firebase deploy --only firestore:rules --project dhealth-fb17e
+```
+
+**How the dermatologist would request access himself**, instead of you
+creating his account by hand in step 4: he can sign in to the portal with
+any account (even one you create with the default `patient` role, or via
+Google Sign-In), see the "You don't have access" screen, and click
+**Request reviewer access**. That creates a pending
+`reviewerAccessRequests` doc. You (as `clinicalAdmin`) then see it under
+**Reviewers → Pending requests** and click **Approve** — no console trip
+needed. Steps 4–5 in this doc (manually creating the account and setting
+the role in the console) still work exactly as before if you'd rather do
+it that way.
+
 ## Summary checklist
 
 - [ ] `firebase hosting:sites:create` + `target:apply` (step 1, one-time)
@@ -182,4 +234,5 @@ before it reaches the dart source the app actually ships.
 - [ ] Create the dermatologist's Firebase Auth account (step 4)
 - [ ] Set his `users/{uid}.profile.role` to `clinicalReviewer` (step 5)
 - [ ] Run `tool/submit_citation_audit_reviews.dart` to seed the 29 pending reviews (step 6)
+- [ ] Deploy Cloud Functions (`cd functions && npm install && cd .. && firebase deploy --only functions`) and updated `firestore.rules` (step 8)
 - [ ] Share the URL + credentials with him

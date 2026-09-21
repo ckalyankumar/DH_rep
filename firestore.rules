@@ -10,6 +10,12 @@
 //   cannot self-grant clinicalReviewer / clinicalAdmin.
 // 2026-09-14: bind submittedBy/reviewedBy to Auth email; reject
 //   self-approval and short reviewNotes on the pending→approved write.
+// 2026-09-21: added reviewerAccessRequests (client can create/read own
+//   request; only clinicalAdmin can list all). Deciding a request and
+//   granting clinicalReviewer happens only via Cloud Functions
+//   (functions/src/index.ts), never through these rules. Also let
+//   clinicalAdmin read any users/{uid} doc (read-only) for the portal's
+//   Reviewers tab.
 
 rules_version = '2';
 service cloud.firestore {
@@ -198,7 +204,12 @@ service cloud.firestore {
     // Clients may only set profile.role to patient|doctor. Protected roles
     // (clinicalReviewer, clinicalAdmin) are console / Admin SDK only.
     match /users/{uid} {
-      allow read:  if isSignedIn() && (isOwner(uid) || isDoctorLinkedToPatient(uid));
+      // clinicalAdmin can read any user doc — needed for the review
+      // portal's Reviewers tab (listing who currently holds
+      // clinicalReviewer/clinicalAdmin). Read-only: role grants still only
+      // happen via the Cloud Functions in functions/src/index.ts.
+      allow read:  if isSignedIn()
+        && (isOwner(uid) || isDoctorLinkedToPatient(uid) || isClinicalAdmin());
       allow create: if isSignedIn() && isOwner(uid)
         && isClientRole(incomingProfileRole());
       allow update: if isSignedIn() && isOwner(uid) && roleUpdateAllowed();
@@ -365,6 +376,28 @@ service cloud.firestore {
       allow create: if isClinicalAdmin() && emergencyCreateValid();
       allow update: if isClinicalAdmin() && emergencyUpdateValid();
       allow delete: if false;
+    }
+
+    // Reviewer access requests: any signed-in user may create/read their
+    // own pending request ("I'd like clinicalReviewer access"). Only
+    // clinicalAdmin can read the full list (to act on it in the portal).
+    // Deciding a request (approve/reject) — which grants the protected
+    // clinicalReviewer role on users/{uid} — is intentionally NOT possible
+    // through these rules at all: it only happens via the
+    // approveClinicalReviewer / rejectReviewerAccess Cloud Functions
+    // (functions/src/index.ts), which run with the Admin SDK and so
+    // bypass these rules entirely. That keeps the one path that grants a
+    // protected role server-side and auditable, same reasoning as the
+    // profile.role lock above.
+    match /reviewerAccessRequests/{requestId} {
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == signedInEmail()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedAt == request.time;
+      allow read: if isSignedIn()
+        && (resource.data.uid == request.auth.uid || isClinicalAdmin());
+      allow update, delete: if false;
     }
 
     // ── DENY ALL ELSE ───────────────────────────────────────────────

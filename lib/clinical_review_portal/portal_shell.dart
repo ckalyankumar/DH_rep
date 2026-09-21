@@ -1,8 +1,10 @@
 import 'package:dhealth/clinical_review/clinical_review_portal_service.dart';
 import 'package:dhealth/clinical_review_portal/audit_history_screen.dart';
+import 'package:dhealth/clinical_review_portal/dashboard_screen.dart';
 import 'package:dhealth/clinical_review_portal/emergency_actions_screen.dart';
 import 'package:dhealth/clinical_review_portal/portal_auth.dart';
 import 'package:dhealth/clinical_review_portal/review_queue_screen.dart';
+import 'package:dhealth/clinical_review_portal/reviewers_screen.dart';
 import 'package:flutter/material.dart';
 
 class PortalShell extends StatefulWidget {
@@ -29,6 +31,12 @@ class _PortalShellState extends State<PortalShell> {
   @override
   Widget build(BuildContext context) {
     final destinations = <NavigationRailDestination>[
+      if (widget.isAdmin)
+        const NavigationRailDestination(
+          icon: Icon(Icons.dashboard_outlined),
+          selectedIcon: Icon(Icons.dashboard),
+          label: Text('Dashboard'),
+        ),
       const NavigationRailDestination(
         icon: Icon(Icons.inbox_outlined),
         selectedIcon: Icon(Icons.inbox),
@@ -41,16 +49,21 @@ class _PortalShellState extends State<PortalShell> {
       ),
       if (widget.isAdmin)
         const NavigationRailDestination(
+          icon: Icon(Icons.people_outline),
+          selectedIcon: Icon(Icons.people),
+          label: Text('Reviewers'),
+        ),
+      if (widget.isAdmin)
+        const NavigationRailDestination(
           icon: Icon(Icons.warning_amber_outlined),
           selectedIcon: Icon(Icons.warning_amber),
           label: Text('Emergency'),
         ),
     ];
-    final index = widget.isAdmin
-        ? _index
-        : (_index > 1 ? 0 : _index);
+    final index = _index.clamp(0, destinations.length - 1);
 
     final pages = <Widget>[
+      if (widget.isAdmin) DashboardScreen(service: widget.service),
       ReviewQueueScreen(
         service: widget.service,
         reviewedBy: widget.identity.actorLabel,
@@ -59,6 +72,7 @@ class _PortalShellState extends State<PortalShell> {
         service: widget.service,
         reviewedBy: widget.identity.actorLabel,
       ),
+      if (widget.isAdmin) ReviewersScreen(service: widget.service),
       if (widget.isAdmin)
         EmergencyActionsScreen(
           service: widget.service,
