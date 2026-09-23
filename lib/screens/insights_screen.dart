@@ -288,6 +288,12 @@ class _InsightsScreenState extends State<InsightsScreen> {
 
   Widget _buildFlareRiskCard() {
     final risk = _insights!.flareRiskPrediction;
+    final flags = FeatureFlagsScope.of(context);
+    // Named triggers are trigger interpretation, so they need both flags even
+    // though the card itself is gated by showRiskScore.
+    final showTopTriggers = flags.showRiskScore &&
+        flags.showTriggerInsights &&
+        risk.topTriggers.isNotEmpty;
 
     return Card(
       color: _getRiskColor(risk.riskPercentage).withValues(alpha:0.05),
@@ -330,7 +336,7 @@ class _InsightsScreenState extends State<InsightsScreen> {
               '${risk.riskPercentage.toStringAsFixed(1)}% risk',
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
-            if (risk.topTriggers.isNotEmpty) ...[
+            if (showTopTriggers) ...[
               const SizedBox(height: 8),
               Text(
                 'Top triggers: ${risk.topTriggers.join(", ")}',
@@ -667,7 +673,6 @@ class _InsightsScreenState extends State<InsightsScreen> {
   // ═══════════════════════════════════════════════════════════════════════
 
   /// Coverage caveats for named triggers, looked up from detected results.
-  /// Used on the always-visible flare-risk "Top triggers" line.
   List<String> _coverageNotesForNames(List<String> names) {
     final byName = {
       for (final t in _insights!.detectedTriggers) t.name: t.coverageNote,

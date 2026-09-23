@@ -62,6 +62,30 @@ DailyLog _todayLog({
   );
 }
 
+/// 20 days with a perfect stress–itch relationship, so InsightEngine detects
+/// 'Psychological Stress' and the flare-risk card has non-empty topTriggers.
+void _seedStressItchLogs(DailyLogService service) {
+  final today = DateTime.now();
+  for (var i = 0; i < 20; i++) {
+    service.addLog(
+      DailyLog(
+        id: 'stress-itch-$i',
+        date: DateTime(today.year, today.month, today.day)
+            .subtract(Duration(days: i)),
+        condition: 'psoriasis',
+        mood: 4,
+        itchIntensity: i.isEven ? 8 : 2,
+        stressLevel: i.isEven ? 9 : 1,
+        lesionSeverity: 'mild',
+        affectedAreas: const ['arm'],
+        sleepQuality: 4,
+        sleepDisruption: false,
+        notes: '',
+      ),
+    );
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -289,6 +313,42 @@ void main() {
       expect(find.byTooltip('Export for dermatologist review'), findsNothing);
       await tester.ensureVisible(find.text('When to Seek Urgent Care'));
       expect(find.text('When to Seek Urgent Care'), findsOneWidget);
+    });
+  });
+
+  group('Flare-risk card "Top triggers" line', () {
+    testWidgets('positive control: risk on + triggers on shows Top triggers',
+        (tester) async {
+      final logs = DailyLogService();
+      _seedStressItchLogs(logs);
+
+      await tester.pumpWidget(
+        _app(
+          _allOn,
+          InsightsScreen(dailyLogService: logs, condition: 'psoriasis'),
+        ),
+      );
+      await _pumpUntilFound(tester, find.textContaining('Top triggers'));
+
+      expect(find.textContaining('Top triggers'), findsOneWidget);
+    });
+
+    testWidgets('risk on + triggers off hides Top triggers, keeps flare risk',
+        (tester) async {
+      final logs = DailyLogService();
+      _seedStressItchLogs(logs);
+
+      await tester.pumpWidget(
+        _app(
+          _allOn.copyWith(showTriggerInsights: false),
+          InsightsScreen(dailyLogService: logs, condition: 'psoriasis'),
+        ),
+      );
+      await _pumpUntilFound(tester, find.textContaining('Flare Risk'));
+
+      expect(find.textContaining('Flare Risk'), findsOneWidget);
+      expect(find.textContaining('Top triggers'), findsNothing);
+      expect(find.textContaining('Psychological Stress'), findsNothing);
     });
   });
 }
