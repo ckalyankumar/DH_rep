@@ -4,14 +4,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:dhealth/models/recommendation_model.dart';
 import 'package:dhealth/models/clinical_evidence_models.dart';
-import 'package:dhealth/widgets/clinical_note_widget.dart'
-    show ClinicalNoteType, ClinicalNoteWidget, showWhenToSeeDoctorModal;
 import 'package:dhealth/services/recommendation_service.dart';
 import 'package:dhealth/services/recommendation_export_service.dart';
 import 'package:dhealth/services/personalization_service.dart';
 import 'package:dhealth/data/disorder_registry.dart';
 import 'package:dhealth/widgets/empty_state_widget.dart';
 import 'package:dhealth/widgets/feature_flags_scope.dart';
+import 'package:dhealth/widgets/urgent_care_section.dart';
 
 class RecommendationsScreen extends StatefulWidget {
   final String selectedCondition;
@@ -151,7 +150,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
           description:
               'We\'re completing a clinical safety review before showing personalized care suggestions. Your daily logs, questionnaires, and reports to your dermatologist are unchanged.',
         ),
-        if (redFlags.isNotEmpty) _buildRedFlagsSection(redFlags),
+        if (redFlags.isNotEmpty) UrgentCareSection(redFlags: redFlags),
       ],
     );
   }
@@ -188,7 +187,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
         _buildDisclaimerBanner(),
         const SizedBox(height: 16),
         if (redFlags.isNotEmpty) ...[
-          _buildRedFlagsSection(redFlags),
+          UrgentCareSection(redFlags: redFlags),
           const SizedBox(height: 16),
         ],
         _buildGuidelineSourcesSection(guidelineSources),
@@ -218,7 +217,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
           _buildDisclaimerBanner(),
           const SizedBox(height: 16),
           if (redFlags.isNotEmpty) ...[
-            _buildRedFlagsSection(redFlags),
+            UrgentCareSection(redFlags: redFlags),
             const SizedBox(height: 16),
           ],
           _buildGuidelineSourcesSection(guidelineSources),
@@ -309,44 +308,6 @@ class _RecommendationsScreenState extends State<RecommendationsScreen>
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRedFlagsSection(List<RedFlag> redFlags) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'When to Seek Urgent Care',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF2c3e50),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...redFlags.map((flag) {
-            final body = StringBuffer(
-              '${flag.whyImportant}\n\nAction: ${flag.actionToTake}',
-            );
-            if (flag.guidelineSource != null) {
-              body.write('\n\nSource: ${flag.guidelineSource}');
-            }
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: ClinicalNoteWidget(
-                type: ClinicalNoteType.redFlag,
-                title: flag.symptom,
-                body: body.toString(),
-                actionLabel: 'Learn more',
-                onAction: () => showWhenToSeeDoctorModal(context),
-              ),
-            );
-          }),
         ],
       ),
     );

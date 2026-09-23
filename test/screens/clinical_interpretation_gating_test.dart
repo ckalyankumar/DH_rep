@@ -351,4 +351,63 @@ void main() {
       expect(find.textContaining('Psychological Stress'), findsNothing);
     });
   });
+
+  group('Home urgent-care entry (ungated)', () {
+    for (final entry in {
+      'defaults': FeatureFlags.defaults,
+      'all flags on': _allOn,
+    }.entries) {
+      testWidgets('${entry.key}: entry on screen at 390x844 without '
+          'scrolling, opens urgent care', (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(_app(entry.value, const MainScreen()));
+        await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
+
+        final tile = find.byKey(const Key('homeUrgentCareEntry'));
+        expect(tile, findsOneWidget);
+        expect(find.text('When to seek urgent care'), findsOneWidget);
+        expect(find.text('When to Seek Urgent Care'), findsNothing);
+
+        // Fully inside the viewport and above the bottom nav, no scrolling.
+        final tileRect = tester.getRect(tile);
+        final navTop =
+            tester.getRect(find.byType(BottomNavigationBar)).top;
+        expect(tileRect.top, greaterThanOrEqualTo(0));
+        expect(tileRect.bottom, lessThanOrEqualTo(navTop));
+
+        await tester.tap(tile);
+        await _pumpUntilFound(tester, find.text('When to Seek Urgent Care'));
+
+        expect(find.widgetWithText(AppBar, 'Urgent care'), findsOneWidget);
+        expect(find.text('When to Seek Urgent Care'), findsOneWidget);
+      });
+    }
+  });
+
+  group('Urgent-care entry on startup failure', () {
+    testWidgets('Initialization Failed screen shows the entry and it opens '
+        'urgent care', (tester) async {
+      await tester.pumpWidget(
+        _app(
+          FeatureFlags.defaults,
+          MainScreen(
+            createDailyLogService: () => throw StateError('storage broken'),
+          ),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Initialization Failed'));
+
+      expect(find.text('Initialization Failed'), findsOneWidget);
+      final tile = find.byKey(const Key('homeUrgentCareEntry'));
+      expect(tile, findsOneWidget);
+
+      await tester.tap(tile);
+      await _pumpUntilFound(tester, find.text('When to Seek Urgent Care'));
+
+      expect(find.widgetWithText(AppBar, 'Urgent care'), findsOneWidget);
+      expect(find.text('When to Seek Urgent Care'), findsOneWidget);
+    });
+  });
 }

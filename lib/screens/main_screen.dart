@@ -12,6 +12,7 @@ import 'package:dhealth/screens/recommendations_screen.dart';
 import 'package:dhealth/screens/login_screen.dart';
 import 'package:dhealth/screens/pro_questionnaire_screen.dart';
 import 'package:dhealth/screens/settings/settings_screen.dart';
+import 'package:dhealth/screens/urgent_care_screen.dart';
 import 'package:dhealth/services/firestore_weekly_pulse_service.dart';
 import 'package:dhealth/widgets/weekly_pulse_dialog.dart';
 import 'package:dhealth/models/log_analytics.dart';
@@ -42,7 +43,11 @@ import 'package:dhealth/widgets/skeleton_widgets.dart';
 import 'dart:io' show Platform;
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, this.createDailyLogService});
+
+  /// Test seam for startup-failure screens. Defaults to [DailyLogService.new].
+  @visibleForTesting
+  final DailyLogService Function()? createDailyLogService;
 
   @override
   State createState() => _MainScreenState();
@@ -123,7 +128,8 @@ class _MainScreenState extends State<MainScreen> {
 
       // DailyLogService
       try {
-        _dailyLogService = DailyLogService();
+        _dailyLogService =
+            (widget.createDailyLogService ?? DailyLogService.new)();
         debugPrint('DailyLogService created');
       } catch (e) {
         debugPrint('Failed to create DailyLogService: $e');
@@ -534,10 +540,43 @@ class _MainScreenState extends State<MainScreen> {
     return '${result.finalScore}/100 — $breakdown';
   }
 
+  /// Static urgent-care guidance entry. Always shown, including on startup
+  /// failure screens: must not read FeatureFlags (reference content, not
+  /// computed interpretation).
+  Widget _buildUrgentCareEntry() {
+    return Card(
+      key: const Key('homeUrgentCareEntry'),
+      child: ListTile(
+        leading: const Icon(
+          Icons.health_and_safety_outlined,
+          color: AppTheme.textSecondary,
+        ),
+        title: const Text('When to seek urgent care'),
+        subtitle: const Text(
+          'Warning signs that need prompt medical attention',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => UrgentCareScreen(condition: selectedCondition),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHomeScreen() {
     if (_dailyLogService == null) {
-      return const Center(
-        child: Text('DailyLogService not initialized'),
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Center(child: Text('DailyLogService not initialized')),
+          const SizedBox(height: 16),
+          _buildUrgentCareEntry(),
+        ],
       );
     }
 
@@ -611,6 +650,9 @@ class _MainScreenState extends State<MainScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: 16),
+
+          _buildUrgentCareEntry(),
           const SizedBox(height: 16),
 
           // Risk card (hidden when showRiskScore is false; computation above still runs)
@@ -1019,6 +1061,11 @@ class _MainScreenState extends State<MainScreen> {
                   _initializeAllServices();
                 },
                 child: const Text('Retry'),
+              ),
+              const SizedBox(height: 24),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _buildUrgentCareEntry(),
               ),
             ],
           ),
