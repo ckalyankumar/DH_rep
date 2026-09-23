@@ -8,28 +8,33 @@ import 'package:dhealth/config/feature_flags.dart';
 /// Listens to `appConfig/clinicalInterpretationFlags` and exposes the latest
 /// [FeatureFlags]. Starts at [FeatureFlags.defaults] and returns to those
 /// defaults if the document is missing, deleted, or the snapshot stream errors
-/// (offline with no cache, permission denied, etc.).
+/// (offline with no cache, permission denied, etc.). A synchronous throw while
+/// setting up the listener (e.g. Firebase not initialised) also resolves to
+/// defaults instead of propagating.
 ///
 /// Does not write to Firestore. Client writes are denied in security rules.
 class FeatureFlagService {
-  FeatureFlagService({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance {
-    _subscription = _docRef.snapshots().listen(
-      _onSnapshot,
-      onError: _onError,
-      cancelOnError: false,
-    );
+  FeatureFlagService({FirebaseFirestore? firestore}) {
+    try {
+      final db = firestore ?? FirebaseFirestore.instance;
+      _subscription = db
+          .collection(FeatureFlags.firestoreCollection)
+          .doc(FeatureFlags.firestoreDocumentId)
+          .snapshots()
+          .listen(
+            _onSnapshot,
+            onError: _onError,
+            cancelOnError: false,
+          );
+    } catch (error, stackTrace) {
+      _onError(error, stackTrace);
+    }
   }
 
-  final FirebaseFirestore _db;
   final _controller = StreamController<FeatureFlags>.broadcast();
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _subscription;
   FeatureFlags _current = FeatureFlags.defaults;
   var _hasEmitted = false;
-
-  DocumentReference<Map<String, dynamic>> get _docRef => _db
-      .collection(FeatureFlags.firestoreCollection)
-      .doc(FeatureFlags.firestoreDocumentId);
 
   /// Latest resolved flags. Safe to read before the first snapshot.
   FeatureFlags get current => _current;

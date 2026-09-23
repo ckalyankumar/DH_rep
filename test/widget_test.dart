@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:dhealth/config/feature_flags.dart';
 import 'package:dhealth/data/disorder_registry.dart';
 import 'package:dhealth/models/daily_log.dart';
 import 'package:dhealth/models/log_analytics.dart';
@@ -21,6 +22,7 @@ import 'package:dhealth/screens/login_screen.dart';
 import 'package:dhealth/screens/main_screen.dart';
 import 'package:dhealth/services/daily_log_service.dart';
 import 'package:dhealth/widgets/auth_gate.dart';
+import 'package:dhealth/widgets/feature_flags_scope.dart';
 
 Widget _app(Widget home) => MaterialApp(home: home);
 
@@ -138,7 +140,20 @@ void main() {
 
     testWidgets('adding a today log then rebuilding updates the risk score',
         (tester) async {
-      await tester.pumpWidget(_app(const MainScreen()));
+      // Risk UI is off by default (fail closed); enable it for this test.
+      await tester.pumpWidget(
+        _app(
+          const FeatureFlagsScope(
+            flags: FeatureFlags(
+              showRiskScore: true,
+              showRedFlags: true,
+              showTriggerInsights: true,
+              showRecommendations: true,
+            ),
+            child: MainScreen(),
+          ),
+        ),
+      );
       await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
       expect(find.text('No log for today yet'), findsOneWidget);
 

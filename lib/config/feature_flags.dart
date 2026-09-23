@@ -16,10 +16,13 @@ class FeatureFlags {
 
   /// Compile-time defaults used before the first snapshot and whenever the
   /// remote document is missing, unreadable, or a field is the wrong type.
+  ///
+  /// Fail closed: every interpretive feature stays hidden until clinical
+  /// sign-off, when it is enabled explicitly in the remote document.
   static const defaults = FeatureFlags(
-    showRiskScore: true,
-    showRedFlags: true,
-    showTriggerInsights: true,
+    showRiskScore: false,
+    showRedFlags: false,
+    showTriggerInsights: false,
     showRecommendations: false,
   );
 

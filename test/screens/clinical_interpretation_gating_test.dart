@@ -12,7 +12,18 @@ import 'package:dhealth/screens/recommendations_screen.dart';
 import 'package:dhealth/services/daily_log_service.dart';
 import 'package:dhealth/widgets/emergency_red_flag_modal.dart';
 import 'package:dhealth/widgets/feature_flags_scope.dart';
+import 'package:dhealth/widgets/trigger_insight_card.dart';
 import 'package:dhealth/widgets/urgent_red_flag_banner.dart';
+
+/// Every interpretive feature enabled. Single-flag tests start from here and
+/// switch one flag off, so they isolate that flag instead of relying on the
+/// (now all-false) defaults.
+const _allOn = FeatureFlags(
+  showRiskScore: true,
+  showRedFlags: true,
+  showTriggerInsights: true,
+  showRecommendations: true,
+);
 
 Widget _app(FeatureFlags flags, Widget home) {
   return MaterialApp(
@@ -108,7 +119,7 @@ void main() {
 
       await tester.pumpWidget(
         _app(
-          FeatureFlags.defaults.copyWith(showRiskScore: false),
+          _allOn.copyWith(showRiskScore: false),
           const MainScreen(),
         ),
       );
@@ -132,7 +143,7 @@ void main() {
 
       await tester.pumpWidget(
         _app(
-          FeatureFlags.defaults.copyWith(showRedFlags: false),
+          _allOn.copyWith(showRedFlags: false),
           const MainScreen(),
         ),
       );
@@ -150,7 +161,7 @@ void main() {
 
       await tester.pumpWidget(
         _app(
-          FeatureFlags.defaults.copyWith(showRedFlags: false),
+          _allOn.copyWith(showRedFlags: false),
           InsightsScreen(dailyLogService: logs, condition: 'psoriasis'),
         ),
       );
@@ -165,7 +176,7 @@ void main() {
         (tester) async {
       await tester.pumpWidget(
         _app(
-          FeatureFlags.defaults.copyWith(showTriggerInsights: false),
+          _allOn.copyWith(showTriggerInsights: false),
           TriggerCorrelationsScreen(
             logs: const [],
             pros: const <ProAssessment>[],
@@ -180,6 +191,104 @@ void main() {
         find.textContaining('personalized trigger patterns'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('Fail-closed defaults (nothing enabled remotely)', () {
+    testWidgets('home hides risk card, risk chips, avg risk, red flags, '
+        'and trigger card', (tester) async {
+      DailyLogService().addLog(
+        _todayLog(itch: 9, mood: 1, sleepDisruption: true),
+      );
+
+      await tester.pumpWidget(
+        _app(FeatureFlags.defaults, const MainScreen()),
+      );
+      await _pumpUntilFound(tester, find.text('Start Daily Check-In'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Start Daily Check-In'), findsOneWidget);
+      expect(find.text("Today's Risk Score"), findsNothing);
+      expect(find.textContaining('/ 100'), findsNothing);
+      expect(find.textContaining('Risk:'), findsNothing);
+      expect(find.text('Avg Risk'), findsNothing);
+      expect(find.byType(UrgentRedFlagBanner), findsNothing);
+      expect(find.byType(EmergencyRedFlagModal), findsNothing);
+      expect(find.byType(TriggerInsightCard), findsNothing);
+    });
+
+    testWidgets('insights hides health score, flare risk, red flags, and '
+        'triggers', (tester) async {
+      final logs = DailyLogService();
+      logs.addLog(_todayLog(itch: 9, mood: 1, sleepDisruption: true));
+
+      await tester.pumpWidget(
+        _app(
+          FeatureFlags.defaults,
+          InsightsScreen(dailyLogService: logs, condition: 'psoriasis'),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Trigger insights paused'));
+
+      expect(find.text('Trigger insights paused'), findsOneWidget);
+      expect(find.text('Overall Health Score'), findsNothing);
+      expect(find.textContaining('Flare Risk'), findsNothing);
+      expect(find.textContaining('Top triggers'), findsNothing);
+      expect(find.textContaining('Red Flags'), findsNothing);
+      expect(find.text('Your Primary Triggers'), findsNothing);
+    });
+
+    testWidgets('insights positive control: all-on shows the same surfaces',
+        (tester) async {
+      final logs = DailyLogService();
+      logs.addLog(_todayLog(itch: 9, mood: 1, sleepDisruption: true));
+
+      await tester.pumpWidget(
+        _app(
+          _allOn,
+          InsightsScreen(dailyLogService: logs, condition: 'psoriasis'),
+        ),
+      );
+      await _pumpUntilFound(tester, find.text('Overall Health Score'));
+
+      expect(find.text('Overall Health Score'), findsOneWidget);
+      expect(find.textContaining('Flare Risk'), findsOneWidget);
+      expect(find.text('Trigger insights paused'), findsNothing);
+    });
+
+    testWidgets('trigger correlations screen shows paused EmptyState',
+        (tester) async {
+      await tester.pumpWidget(
+        _app(
+          FeatureFlags.defaults,
+          TriggerCorrelationsScreen(
+            logs: const [],
+            pros: const <ProAssessment>[],
+            condition: 'psoriasis',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Trigger insights paused'), findsOneWidget);
+      expect(find.byType(TriggerInsightCard), findsNothing);
+    });
+
+    testWidgets('recommendations with no FeatureFlagsScope in the tree stay '
+        'paused; urgent-care content still shows', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: RecommendationsScreen(selectedCondition: 'psoriasis'),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Recommendations paused'), findsOneWidget);
+      expect(find.text('Self-Care'), findsNothing);
+      expect(find.byTooltip('Export for dermatologist review'), findsNothing);
+      await tester.ensureVisible(find.text('When to Seek Urgent Care'));
+      expect(find.text('When to Seek Urgent Care'), findsOneWidget);
     });
   });
 }

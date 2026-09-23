@@ -1,8 +1,18 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dhealth/config/feature_flags.dart';
 import 'package:dhealth/services/feature_flag_service.dart';
+
+/// Throws synchronously from the first call the service makes, standing in for
+/// FirebaseFirestore.instance / .snapshots() failing during setup.
+class _ThrowingFirestore extends Fake implements FirebaseFirestore {
+  @override
+  CollectionReference<Map<String, dynamic>> collection(String collectionPath) {
+    throw StateError('firestore unavailable');
+  }
+}
 
 Future<FeatureFlags> _firstFlags(FeatureFlagService service) {
   return service.flags.first.timeout(const Duration(seconds: 2));
@@ -17,6 +27,9 @@ void main() {
 
       final flags = await _firstFlags(service);
       expect(flags, FeatureFlags.defaults);
+      expect(service.current.showRiskScore, isFalse);
+      expect(service.current.showRedFlags, isFalse);
+      expect(service.current.showTriggerInsights, isFalse);
       expect(service.current.showRecommendations, isFalse);
     });
 
@@ -56,9 +69,9 @@ void main() {
       addTearDown(service.dispose);
 
       final flags = await _firstFlags(service);
-      expect(flags.showRiskScore, isTrue);
-      expect(flags.showRedFlags, isTrue);
-      expect(flags.showTriggerInsights, isTrue);
+      expect(flags.showRiskScore, isFalse);
+      expect(flags.showRedFlags, isFalse);
+      expect(flags.showTriggerInsights, isFalse);
       expect(flags.showRecommendations, isTrue);
     });
 
@@ -105,6 +118,30 @@ void main() {
           .update({FeatureFlags.showRecommendationsKey: true});
 
       expect((await next).showRecommendations, isTrue);
+    });
+
+    test('synchronous throw during listener setup fails closed', () async {
+      late FeatureFlagService service;
+      expect(
+        () => service = FeatureFlagService(firestore: _ThrowingFirestore()),
+        returnsNormally,
+      );
+      addTearDown(service.dispose);
+
+      expect(service.current, FeatureFlags.defaults);
+      expect(service.current.showRiskScore, isFalse);
+      expect(service.current.showRedFlags, isFalse);
+      expect(service.current.showTriggerInsights, isFalse);
+      expect(service.current.showRecommendations, isFalse);
+      await expectLater(service.dispose(), completes);
+    });
+
+    test('no Firebase app initialised: default instance fails closed', () {
+      late FeatureFlagService service;
+      expect(() => service = FeatureFlagService(), returnsNormally);
+      addTearDown(service.dispose);
+
+      expect(service.current, FeatureFlags.defaults);
     });
   });
 }

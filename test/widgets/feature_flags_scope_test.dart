@@ -22,7 +22,7 @@ void main() {
       const MaterialApp(home: Scaffold(body: _FlagsProbe())),
     );
 
-    expect(find.text('recs:false|risk:true'), findsOneWidget);
+    expect(find.text('recs:false|risk:false'), findsOneWidget);
   });
 
   testWidgets('host with a missing Firestore doc keeps defaults', (tester) async {
@@ -37,7 +37,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('recs:false|risk:true'), findsOneWidget);
+    expect(find.text('recs:false|risk:false'), findsOneWidget);
     expect(find.byType(FeatureFlagsScope), findsOneWidget);
   });
 
